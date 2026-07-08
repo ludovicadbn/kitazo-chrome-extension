@@ -302,25 +302,30 @@
           preciso: true,           // rating del singolo episodio
         });
       }
-      // AGGREGATO (serie non coperte dal pass 5): rating a livello serie.
-      // NON è preciso: dice la serie e quante volte hai votato, ma NON quale
-      // episodio. Il pass 5 (quando disponibile) fornisce l'episodio esatto.
+      // AGGREGATO (serie non coperte): rating a livello serie, NON preciso.
+      // SOLO se il bulk rating non è girato: il bulk (rating_episodi_precisi_0)
+      // è completo, quindi l'aggregato aggiungerebbe solo eventuali fantasmi.
+      const bulkRan = pulls.some(
+        (p) => p.ok && (p.label === "rating_episodi_precisi_0" || p.label === "rating_episodi_bulk_meta"),
+      );
       const agg = pulls.find((p) => p.label === "rating_serie_aggregato" && p.ok);
       const rows = agg?.data?.rows || agg?.data?.data?.rows || [];
-      for (const r of rows) {
-        const tvdb = serieTvdbByName.get(r.serie_name);
-        if (coveredRatingSeries.has(tvdb)) continue;
-        const nome = (r.reazione || "").toLowerCase();
-        const m = /\(x(\d+)\)/.exec(r.reazione_raw || "");
-        const volte = m ? Number(m[1]) : 1;
-        out.push({
-          tipo: "series",
-          serie_name: r.serie_name,
-          tvdb_id: tvdb,
-          nome, stelle: REAZIONE_STELLE[nome] ?? null,
-          volte,                    // in quante puntate hai votato (non quali)
-          preciso: false,           // manca l'episodio: non è per-puntata
-        });
+      if (!bulkRan) {
+        for (const r of rows) {
+          const tvdb = serieTvdbByName.get(r.serie_name);
+          if (coveredRatingSeries.has(tvdb)) continue;
+          const nome = (r.reazione || "").toLowerCase();
+          const m = /\(x(\d+)\)/.exec(r.reazione_raw || "");
+          const volte = m ? Number(m[1]) : 1;
+          out.push({
+            tipo: "series",
+            serie_name: r.serie_name,
+            tvdb_id: tvdb,
+            nome, stelle: REAZIONE_STELLE[nome] ?? null,
+            volte,                    // in quante puntate hai votato (non quali)
+            preciso: false,           // manca l'episodio: non è per-puntata
+          });
+        }
       }
       return out;
     };
@@ -366,21 +371,30 @@
           preciso: true,           // episodio esatto
         });
       }
-      // 2) Aggregato con conteggio (xN): serie NON coperte dal pass 5.
-      //    Dice chi + quante volte, ma NON in quali episodi -> non preciso.
-      for (const r of rows) {
-        const tvdb = serieTvdbByName.get(r.serie_name);
-        if (coveredSeries.has(tvdb)) continue;  // già coperta con dettaglio
-        const m = /^(.*?)\s*\(x(\d+)\)\s*$/.exec(r.personaggio_raw || r.personaggio || "");
-        const volte = m ? Number(m[2]) : 1;
-        out.push({
-          tipo: "series",
-          serie_name: r.serie_name,
-          tvdb_id: tvdb,
-          personaggio: m ? m[1].trim() : r.personaggio,
-          volte,                    // in quante puntate (non quali)
-          preciso: false,           // manca l'episodio
-        });
+      // 2) Aggregato con conteggio (xN): SOLO se la scansione per-episodio non
+      //    è girata. Quando la scansione c'è (voti_personaggio_scan_meta o
+      //    blocchi voti_personaggio_episodi), essa è la verità completa: usare
+      //    l'aggregato aggiungerebbe voti fantasma (l'aggregato di TV Time puo
+      //    contenere residui/preferiti-show che NON esistono come voto puntata).
+      const scanRan = pulls.some(
+        (p) => p.ok && (p.label === "voti_personaggio_scan_meta" ||
+          p.label === "voti_personaggio_episodi" || /^voti_personaggio_episodi_\d+$/.test(p.label)),
+      );
+      if (!scanRan) {
+        for (const r of rows) {
+          const tvdb = serieTvdbByName.get(r.serie_name);
+          if (coveredSeries.has(tvdb)) continue;  // già coperta con dettaglio
+          const m = /^(.*?)\s*\(x(\d+)\)\s*$/.exec(r.personaggio_raw || r.personaggio || "");
+          const volte = m ? Number(m[2]) : 1;
+          out.push({
+            tipo: "series",
+            serie_name: r.serie_name,
+            tvdb_id: tvdb,
+            personaggio: m ? m[1].trim() : r.personaggio,
+            volte,                    // in quante puntate (non quali)
+            preciso: false,           // manca l'episodio
+          });
+        }
       }
       return out;
     };
