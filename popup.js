@@ -12,7 +12,6 @@ const I18N = {
     consentText: "Confermo che questi sono i <b>miei</b> dati personali su TV Time e che voglio esportarli per uso personale o per trasferirli a un servizio di mia scelta (portabilità dei dati). Non esporterò dati di altri utenti.",
     exportBtn: "Scarica i miei dati (ZIP)",
     clearBtn: "Svuota",
-    exportRawBtn: "⚙ Scarica JSON grezzo (debug)",
 
     tokenActive: (uid) => `Sessione attiva${uid ? ` · utente ${uid}` : ""}.`,
     tokenHint: "Per iniziare: apri la sezione Profilo su TV Time e ricarica la pagina.",
@@ -32,8 +31,6 @@ const I18N = {
     sayZipDone: "Archivio scaricato: serie, film e liste.",
     sayConvertError: (e) => "Errore nella conversione: " + e,
     sayCleared: "Svuotato.",
-    sayPreparingRaw: "Preparo il JSON grezzo…",
-    sayRawDone: (n) => `JSON grezzo scaricato (${n} pull).`,
   },
   en: {
     refreshTitle: "Start over if it gets stuck",
@@ -42,7 +39,6 @@ const I18N = {
     consentText: "I confirm that this is <b>my</b> personal TV Time data and that I want to export it for personal use or to move it to a service of my choice (data portability). I will not export other users' data.",
     exportBtn: "Download my data (ZIP)",
     clearBtn: "Clear",
-    exportRawBtn: "⚙ Download raw JSON (debug)",
 
     tokenActive: (uid) => `Session active${uid ? ` · user ${uid}` : ""}.`,
     tokenHint: "To start: open your Profile section on TV Time and reload the page.",
@@ -62,8 +58,6 @@ const I18N = {
     sayZipDone: "Archive downloaded: shows, movies and lists.",
     sayConvertError: (e) => "Conversion error: " + e,
     sayCleared: "Cleared.",
-    sayPreparingRaw: "Preparing the raw JSON…",
-    sayRawDone: (n) => `Raw JSON downloaded (${n} pulls).`,
   },
 };
 
@@ -160,8 +154,6 @@ async function refresh() {
   $("clear").disabled = running || !hasData;
   // Export: richiede ANCHE il consenso esplicito
   $("export").disabled = running || !hasData || !consented;
-  // Debug: solo dati + pull finito (no consenso: è per uso tecnico)
-  $("exportRaw").disabled = running || !hasData;
 }
 
 // --- pull attivo: parte dalla pagina ---------------------------------------
@@ -242,28 +234,6 @@ $("clear").addEventListener("click", async () => {
   await ask({ type: "clear" });
   say(t("sayCleared"));
   refresh();
-});
-
-// DEBUG: scarica il JSON grezzo con tutti i pull così come tornano dall'API,
-// senza pulizia né conversione. Utile per ispezionare campi non documentati
-// (es. extended_comment dei commenti con foto).
-$("exportRaw").addEventListener("click", async () => {
-  say(t("sayPreparingRaw"));
-  const { captures, pulls } = await ask({ type: "dump" });
-  const payload = {
-    exportedAt: new Date().toISOString(),
-    tool: "TV Time Extractor by Kitazo — RAW DEBUG",
-    pulls,               // tutti i pull, dati integrali
-    passiveCaptures: captures,
-  };
-  const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" }));
-  const a = document.createElement("a");
-  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-");
-  a.href = url;
-  a.download = `tvtime-raw-debug-${stamp}.json`;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 30_000);
-  say(t("sayRawDone", pulls.length));
 });
 
 // --- avvio ------------------------------------------------------------------
