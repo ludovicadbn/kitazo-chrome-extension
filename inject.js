@@ -239,6 +239,25 @@
     } catch { return null; }
   }
 
+  // Come fetchQuiet ma conserva lo status HTTP e il corpo grezzo: serve al
+  // probe diagnostico per distinguere "endpoint sbagliato" (404/4xx) da
+  // "nessun voto" (200 con lista vuota).
+  async function fetchProbe(target, jwt) {
+    try {
+      const res = await fetchTimeout(sidecarUrl(target), {
+        method: "GET",
+        headers: authHeaders(jwt),
+        credentials: "include",
+      });
+      const text = await res.text();
+      let data = null;
+      try { data = JSON.parse(text); } catch {}
+      return { status: res.status, ok: res.ok, data, raw: data ? undefined : text.slice(0, 300) };
+    } catch (e) {
+      return { status: 0, ok: false, data: null, error: String(e) };
+    }
+  }
+
   const unwrap = (d) => (d && d.data !== undefined ? d.data : d);
   const listOf = (d) => {
     const x = unwrap(d);
@@ -419,6 +438,18 @@
         await new Promise((r) => setTimeout(r, 200));
       }
 
+      // === PROBE DIAGNOSTICO: voti per-episodio via UUID (come i film) ===
+      // Ipotesi: gli stessi endpoint che funzionano per i film, ma con l'UUID
+      // dell'EPISODIO (preso da struct), restituiscono rating a stelle e
+      // personaggi PER EPISODIO. Provo solo le puntate viste delle serie che
+      // dall'aggregato risultano votate/valutate e logго la risposta grezza
+      // (status incluso) per confermare prima di riscrivere il pass 5.
+      await probeEpisodeVotesUUID(
+        uid, jwt,
+        new Set([...votedSeriesNames, ...ratedSeriesNames]),
+        nameToTvdb, watchedEpisodeIds,
+      );
+
       // Il ciclo per-episodio (pass 5) è LENTO e opzionale. Solo se l'utente
       // ha scelto "voti per episodio". Altrimenti si usa l'aggregato (top-5).
       if (deepVotes) {
@@ -460,6 +491,64 @@
       await new Promise((r) => setTimeout(r, 200));
     }
     return done;
+  }
+
+  // PROBE: verifica l'endpoint UUID per i voti per-episodio (rating + personaggi)
+  // usando gli stessi path dei film. Non riscrive nulla: emette risultati
+  // `PROBE_uuid_<tvdb>` nel debug con hit reali + risposta grezza del 1° tentativo.
+  async function probeEpisodeVotesUUID(uid, jwt, seriesNames, nameToTvdb, watchedEpisodeIds) {
+    const ratingBase = "https://msapi.tvtime.com/live/v1/ratings/votes"; // come i film
+    const subjBase = "https://votes.tvtime.com/v1/votes/subject";        // come i film
+    const PER_SERIES_CAP = 40;   // max episodi provati per serie
+    const GLOBAL_CAP = 240;      // max chiamate totali del probe (2 per episodio)
+    let calls = 0;
+
+    for (const name of seriesNames) {
+      const tvdb = nameToTvdb.get(name);
+      if (tvdb == null) {
+        relay("pullResult", { label: `PROBE_uuid_${name}`, status: 0, ok: false, error: "nessun tvdb per questo nome serie" });
+        continue;
+      }
+      const eps = (episodesBySeriesTvdb.get(tvdb) || [])
+        .filter((e) => e.uuid && watchedEpisodeIds.has(e.id))
+        .slice(0, PER_SERIES_CAP);
+
+      const ratingHits = [];
+      const charHits = [];
+      let firstRating = null;
+      let firstChar = null;
+
+      for (const e of eps) {
+        if (calls >= GLOBAL_CAP) break;
+        // rating a stelle, per uuid episodio
+        const rr = await fetchProbe(`${ratingBase}/${e.uuid}/${uid}?set=stars_wording_scalev2`, jwt);
+        if (!firstRating) firstRating = { season: e.season, episode: e.number, uuid: e.uuid, status: rr.status, sample: rr.data ?? rr.raw ?? rr.error };
+        const ruv = (unwrap(rr.data)?.user_votes) || [];
+        if (ruv.length) ratingHits.push({ season: e.season, episode: e.number, name: e.name, uuid: e.uuid, user_votes: ruv });
+        // personaggi votati, per uuid episodio
+        const cr = await fetchProbe(`${subjBase}/${e.uuid}/user/${uid}`, jwt);
+        if (!firstChar) firstChar = { season: e.season, episode: e.number, uuid: e.uuid, status: cr.status, sample: cr.data ?? cr.raw ?? cr.error };
+        const cuv = (unwrap(cr.data)?.user_votes) || [];
+        if (cuv.length) charHits.push({ season: e.season, episode: e.number, name: e.name, uuid: e.uuid, user_votes: cuv });
+        calls += 2;
+        await new Promise((r) => setTimeout(r, 120));
+      }
+
+      relay("pullResult", {
+        label: `PROBE_uuid_${tvdb}`, status: 200, ok: true,
+        data: {
+          serie_name: name,
+          tvdb,
+          episodi_provati: eps.length,
+          rating_endpoint: `${ratingBase}/{ep_uuid}/${uid}?set=stars_wording_scalev2`,
+          char_endpoint: `${subjBase}/{ep_uuid}/user/${uid}`,
+          rating_hits: ratingHits,   // stelle per singolo episodio (se l'endpoint è giusto)
+          char_hits: charHits,       // personaggi per singolo episodio
+          first_rating_raw: firstRating,  // risposta grezza del 1° episodio (anche se vuota/404)
+          first_char_raw: firstChar,
+        },
+      });
+    }
   }
 
   // Pass 5: sugli episodi VISTI delle serie votate, raccoglie in un solo giro

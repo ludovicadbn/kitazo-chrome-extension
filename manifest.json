@@ -1,7 +1,8 @@
 {
   "manifest_version": 3,
   "name": "TV Time Extractor by Kitazo",
-  "version": "6.22.0",
+  "version": "6.23.0",
+  "version_name": "6.23.0-probe",
   "description": "Estrai i tuoi dati TV Time (visti, rating, personaggi, liste) e scaricali come archivio pronto per la migrazione. by Kitazo.",
   "permissions": [
     "storage",
