@@ -421,37 +421,22 @@
       const watchedEpisodeIds = new Set();
       for (const w of listOf(results.visti_episodi)) if (w.episode_id != null) watchedEpisodeIds.add(w.episode_id);
 
-      // === TEST DIAGNOSTICO: votes/subject con l'uuid della SERIE ===
-      // Se questo endpoint restituisce TUTTI i personaggi votati della serie in
-      // un colpo, possiamo eliminare il ciclo lento (1 chiamata/serie invece di
-      // 1/episodio). Il risultato finisce nel JSON grezzo per l'analisi.
-      const vt = "https://votes.tvtime.com/v1/votes/subject";
-      for (const name of votedSeriesNames) {
-        const suuid = nameToUuid.get(name);
-        if (!suuid) continue;
-        const res = await fetchQuiet(`${vt}/${suuid}/user/${uid}`, jwt);
-        const uv = (unwrap(res)?.user_votes) || [];
-        relay("pullResult", {
-          label: `TEST_votes_subject_serie_${suuid}`, status: 200, ok: true,
-          data: { serie_name: name, serie_uuid: suuid, num_user_votes: uv.length, user_votes: uv },
-        });
-        await new Promise((r) => setTimeout(r, 200));
-      }
+      // === RATING per-episodio: endpoint BULK (1 sola chiamata) ===
+      // msapi/prod/v1/ratings/votes/user/{uid}?entity_type=episode restituisce
+      // TUTTI i voti-stella dell'utente in un colpo. Li joino con la struct per
+      // ricavare serie/stagione/episodio ed emetto nel formato che il converter
+      // già consuma (rating_episodi_precisi_0). Niente più ciclo su migliaia di
+      // episodi: i rating per-puntata diventano precisi e di default.
+      await pullEpisodeRatingsBulk(uid, jwt, nameToTvdb);
 
-      // === PROBE DIAGNOSTICO: voti per-episodio via UUID (come i film) ===
-      // Ipotesi: gli stessi endpoint che funzionano per i film, ma con l'UUID
-      // dell'EPISODIO (preso da struct), restituiscono rating a stelle e
-      // personaggi PER EPISODIO. Provo solo le puntate viste delle serie che
-      // dall'aggregato risultano votate/valutate e logго la risposta grezza
-      // (status incluso) per confermare prima di riscrivere il pass 5.
-      await probeEpisodeVotesUUID(
-        uid, jwt,
-        new Set([...votedSeriesNames, ...ratedSeriesNames]),
-        nameToTvdb, nameToUuid, watchedEpisodeIds,
-      );
+      // === PROBE personaggi BULK: votes.tvtime.com/v1/votes/user/{uid} ===
+      // Dal browser dava MissingJWTToken (manca il Bearer); dall'estensione il
+      // JWT c'è. Verifico se esiste un bulk anche per i voti-personaggio: se sì,
+      // eliminiamo anche per i personaggi il giro per-episodio.
+      await probeCharBulk(uid, jwt);
 
-      // Il ciclo per-episodio (pass 5) è LENTO e opzionale. Solo se l'utente
-      // ha scelto "voti per episodio". Altrimenti si usa l'aggregato (top-5).
+      // Fallback per-episodio (personaggi via tozelabs is_voted + rating). LENTO,
+      // opzionale: serve solo finché non confermiamo il bulk personaggi.
       if (deepVotes) {
         await pullEpisodeVotes(uid, jwt, votedSeriesNames, ratedSeriesNames, nameToTvdb, watchedEpisodeIds);
       }
@@ -493,77 +478,70 @@
     return done;
   }
 
-  // PROBE v2: chiude tre domande in un solo export.
-  //  (A) RATING per-episodio: msapi/live/v1/ratings/votes/{ep_uuid}/{uid} ->
-  //      i voti sono sotto `episode_votes` (NON user_votes). Confermato v1.
-  //  (B) RATING per-SERIE: stesso endpoint ma con l'uuid della SERIE: se
-  //      restituisce tutti gli episode_votes in un colpo, 1 call/serie invece
-  //      di 1/episodio (enorme risparmio).
-  //  (C) PERSONAGGI per-episodio via tozelabs is_voted: il subject/votes per
-  //      uuid episodio E per uuid serie tornano vuoti, quindi provo l'unico
-  //      altro meccanismo noto (characters.is_voted sull'endpoint episodio).
-  async function probeEpisodeVotesUUID(uid, jwt, seriesNames, nameToTvdb, nameToUuid, watchedEpisodeIds) {
-    const ratingBase = "https://msapi.tvtime.com/live/v1/ratings/votes";
-    const tozeEp = "https://api2.tozelabs.com/v2/episode";
-    const tozeFields = "characters.fields(id,uuid,name,actor_name,is_voted,vote_count)";
-    const PER_SERIES_CAP = 40;   // max episodi provati per serie
-    const GLOBAL_CAP = 300;      // tetto chiamate totali del probe
-    let calls = 0;
-
-    for (const name of seriesNames) {
-      const tvdb = nameToTvdb.get(name);
-      if (tvdb == null) {
-        relay("pullResult", { label: `PROBE_uuid_${name}`, status: 0, ok: false, error: "nessun tvdb per questo nome serie" });
-        continue;
+  // RATING per-episodio via endpoint BULK: una sola chiamata restituisce tutti
+  // i voti-stella dell'utente. Confermato:
+  //   GET msapi/prod/v1/ratings/votes/user/{uid}?entity_type=episode
+  //   -> { data: [ { episode_id, rating_id, created, ... } ] }
+  // Joina episode_id con la struct (episodesBySeriesTvdb) per serie/stagione/
+  // episodio ed emette rating_episodi_precisi_0 nel formato del converter.
+  async function pullEpisodeRatingsBulk(uid, jwt, nameToTvdb) {
+    const url = `https://msapi.tvtime.com/prod/v1/ratings/votes/user/${uid}?entity_type=episode&set=stars_wording_scalev2`;
+    const list = unwrap(await fetchQuiet(url, jwt));
+    if (!Array.isArray(list)) {
+      relay("pullResult", { label: "rating_episodi_bulk_meta", status: 200, ok: true, data: { count: 0, note: "endpoint bulk vuoto o formato inatteso" } });
+      return;
+    }
+    // indici di join: tvdb -> nome serie, episode_id -> {tvdb, season, number, name}
+    const tvdbToName = new Map();
+    for (const [name, tv] of nameToTvdb) tvdbToName.set(tv, name);
+    const epIndex = new Map();
+    for (const [tvdb, eps] of episodesBySeriesTvdb) {
+      for (const e of eps) if (e.id != null) epIndex.set(e.id, { tvdb, season: e.season, number: e.number, name: e.name });
+    }
+    const votes = [];
+    const unmatched = [];
+    for (const v of list) {
+      const voted_at = v.created ? new Date(v.created * 1000).toISOString().slice(0, 10) : undefined;
+      const info = epIndex.get(v.episode_id);
+      if (info) {
+        votes.push({
+          serie_tvdb: info.tvdb,
+          serie_name: tvdbToName.get(info.tvdb),
+          season: info.season,
+          episode: info.number,
+          episode_name: info.name,
+          episode_id: v.episode_id,
+          rating_id: v.rating_id,
+          voted_at,
+        });
+      } else {
+        unmatched.push({ episode_id: v.episode_id, rating_id: v.rating_id, voted_at });
       }
-      const eps = (episodesBySeriesTvdb.get(tvdb) || [])
-        .filter((e) => e.uuid && watchedEpisodeIds.has(e.id))
-        .slice(0, PER_SERIES_CAP);
+    }
+    relay("pullResult", { label: "rating_episodi_precisi_0", status: 200, ok: true, data: { votes } });
+    // episodi non collegabili alla struct (serie senza struttura scaricata):
+    // restano nel debug per non perderli e per capirne la causa.
+    if (unmatched.length) {
+      relay("pullResult", { label: "rating_episodi_bulk_unmatched", status: 200, ok: true, data: { count: unmatched.length, votes: unmatched } });
+    }
+  }
 
-      // (B) rating per-serie: una sola chiamata con l'uuid della serie
-      const serieUuid = nameToUuid.get(name);
-      let ratingBySeries = null;
-      if (serieUuid) {
-        const sr = await fetchProbe(`${ratingBase}/${serieUuid}/${uid}?set=stars_wording_scalev2`, jwt);
-        const ev = (unwrap(sr.data)?.episode_votes) || [];
-        ratingBySeries = { serie_uuid: serieUuid, status: sr.status, num_episode_votes: ev.length, sample: sr.data ?? sr.raw ?? sr.error };
-        calls++;
-      }
-
-      const ratingHits = [];   // (A) episode_votes per singolo episodio
-      const charHits = [];     // (C) personaggi is_voted per episodio
-      let firstRating = null;
-      let firstChar = null;
-
-      for (const e of eps) {
-        if (calls >= GLOBAL_CAP) break;
-        // (A) rating a stelle per uuid episodio -> campo episode_votes
-        const rr = await fetchProbe(`${ratingBase}/${e.uuid}/${uid}?set=stars_wording_scalev2`, jwt);
-        if (!firstRating) firstRating = { season: e.season, episode: e.number, uuid: e.uuid, status: rr.status, sample: rr.data ?? rr.raw ?? rr.error };
-        const ev = (unwrap(rr.data)?.episode_votes) || [];
-        for (const v of ev) ratingHits.push({ season: e.season, episode: e.number, name: e.name, uuid: e.uuid, rating_id: v.rating_id, modified: v.modified });
-        // (C) personaggi via tozelabs is_voted (per id numerico episodio)
-        const cr = await fetchProbe(`${tozeEp}/${e.id}?fields=${tozeFields}`, jwt);
-        const chars = (unwrap(cr.data)?.characters) || [];
-        if (!firstChar) firstChar = { season: e.season, episode: e.number, ep_id: e.id, status: cr.status, num_characters: chars.length, has_is_voted: chars.some((c) => "is_voted" in c), sample: chars.slice(0, 2) };
-        for (const c of chars) if (c.is_voted) charHits.push({ season: e.season, episode: e.number, name: e.name, character_id: c.id, personaggio: c.name, attore: c.actor_name });
-        calls += 2;
-        await new Promise((r) => setTimeout(r, 120));
-      }
-
+  // PROBE personaggi BULK: cerca l'equivalente del bulk rating per i voti
+  // personaggio. Dal browser questi path danno MissingJWTToken (manca il
+  // Bearer): dall'estensione il JWT è presente, quindi qui possono rispondere.
+  // Logga la risposta grezza per capire lo shape prima di cablarli.
+  async function probeCharBulk(uid, jwt) {
+    const candidates = [
+      `https://votes.tvtime.com/v1/votes/user/${uid}`,
+      `https://votes.tvtime.com/v1/votes/user/${uid}?entity_type=character`,
+    ];
+    for (let i = 0; i < candidates.length; i++) {
+      const r = await fetchProbe(candidates[i], jwt);
       relay("pullResult", {
-        label: `PROBE_uuid_${tvdb}`, status: 200, ok: true,
-        data: {
-          serie_name: name,
-          tvdb,
-          episodi_provati: eps.length,
-          rating_hits: ratingHits,             // (A)
-          rating_by_series: ratingBySeries,    // (B)
-          char_hits: charHits,                 // (C)
-          first_rating_raw: firstRating,
-          first_char_raw: firstChar,
-        },
+        label: `PROBE_charbulk_${i}`, status: r.status, ok: r.ok,
+        data: { url: candidates[i].replace(String(uid), "{uid}"), status: r.status, sample: r.data ?? r.raw ?? r.error },
       });
+      await new Promise((res) => setTimeout(res, 200));
     }
   }
 
