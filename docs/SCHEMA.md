@@ -84,7 +84,8 @@ Serie senza episodi visti: `seasons: []`. Se manca la struttura (raro):
 Rating a stelle. Due formati:
 
 ```jsonc
-// PRECISO (opzione "voti per episodio" attiva): episodio esatto + data.
+// PRECISO (default da v6.25): episodio esatto + data. L'estensione scarica in
+// blocco TUTTI i tuoi voti-episodio, quindi ogni rating ha season/episode noti.
 {
   "tipo": "series", "serie_name": "Answer Me 1988", "tvdb_id": 301078,
   "season": 1, "episode": 3, "episode_name": "Episode 3",
@@ -92,7 +93,10 @@ Rating a stelle. Due formati:
   "data": "2024-05-10",            // YYYY-MM-DD | assente
   "preciso": true
 }
-// AGGREGATO (default): sai serie + voto + in quante puntate, NON quali.
+// AGGREGATO (legacy/fallback): serie + voto + in quante puntate, NON quali.
+// Presente solo negli export vecchi (pre-6.25) o per serie non coperte dal
+// pull preciso. Quando i voti precisi sono disponibili l'aggregato NON viene
+// emesso (per non duplicare / non aggiungere voti fantasma).
 {
   "tipo": "series", "serie_name": "Answer Me 1988", "tvdb_id": 301078,
   "nome": "wow", "stelle": 5,
@@ -104,7 +108,9 @@ Rating a stelle. Due formati:
 ### `personaggi_votati[]`
 
 ```jsonc
-// PRECISO (opzione attiva): un elemento per ogni voto, con episodio.
+// PRECISO (default con la spunta "personaggi per episodio", attiva di default):
+// un elemento per ogni voto, con episodio esatto. La spunta scansiona gli
+// episodi visti (l'unica fonte per i personaggi-episodio, nessun bulk esiste).
 {
   "tipo": "series", "serie_name": "Friendly Rivalry", "tvdb_id": 445778,
   "season": 1, "episode": 4, "episode_name": "Episode 4",
@@ -113,7 +119,10 @@ Rating a stelle. Due formati:
   "character_id": 69095943,        // number — id personaggio TV Time
   "preciso": true
 }
-// AGGREGATO (default): personaggio top per serie + quante volte.
+// AGGREGATO (legacy/fallback): personaggio top per serie + quante volte.
+// Solo se la scansione per-episodio NON è girata (spunta disattivata o export
+// vecchio). Quando la scansione gira, l'aggregato non viene emesso: è troncato
+// al top-5 e può contenere voti fantasma non confermati per episodio.
 {
   "tipo": "series", "serie_name": "Nevertheless,", "tvdb_id": 398079,
   "personaggio": "Na-bi", "volte": 1, "preciso": false
@@ -242,7 +251,9 @@ sparire. Scaricale durante l'import se vuoi conservarle.
 2. **Solo visti**: usa `episodi_totali`/`episodi_visti` per il completamento.
 3. **Reidrata** nome/copertina/cast da TVDB/TMDb via id.
 4. **Date assenti** = sconosciuto, non convertire.
-5. **`preciso`**: `true` = episodio esatto noto (opzione "voti per episodio").
-   `false` = dall'aggregato (serie + `volte`, senza episodio).
+5. **`preciso`**: `true` = episodio esatto noto (ora è il default: rating in
+   bulk + scansione personaggi per-episodio). `false` = dall'aggregato (serie +
+   `volte`, senza episodio) — solo export vecchi o serie non coperte. Quando ci
+   sono voti `preciso:true` per una serie, ignora i suoi `preciso:false`.
 6. **Commenti su episodi**: collegati al `tvdb_id` della serie.
 7. **Liste vuote/null** possibili.
