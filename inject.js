@@ -447,7 +447,7 @@
       await probeEpisodeVotesUUID(
         uid, jwt,
         new Set([...votedSeriesNames, ...ratedSeriesNames]),
-        nameToTvdb, watchedEpisodeIds,
+        nameToTvdb, nameToUuid, watchedEpisodeIds,
       );
 
       // Il ciclo per-episodio (pass 5) è LENTO e opzionale. Solo se l'utente
@@ -493,14 +493,21 @@
     return done;
   }
 
-  // PROBE: verifica l'endpoint UUID per i voti per-episodio (rating + personaggi)
-  // usando gli stessi path dei film. Non riscrive nulla: emette risultati
-  // `PROBE_uuid_<tvdb>` nel debug con hit reali + risposta grezza del 1° tentativo.
-  async function probeEpisodeVotesUUID(uid, jwt, seriesNames, nameToTvdb, watchedEpisodeIds) {
-    const ratingBase = "https://msapi.tvtime.com/live/v1/ratings/votes"; // come i film
-    const subjBase = "https://votes.tvtime.com/v1/votes/subject";        // come i film
+  // PROBE v2: chiude tre domande in un solo export.
+  //  (A) RATING per-episodio: msapi/live/v1/ratings/votes/{ep_uuid}/{uid} ->
+  //      i voti sono sotto `episode_votes` (NON user_votes). Confermato v1.
+  //  (B) RATING per-SERIE: stesso endpoint ma con l'uuid della SERIE: se
+  //      restituisce tutti gli episode_votes in un colpo, 1 call/serie invece
+  //      di 1/episodio (enorme risparmio).
+  //  (C) PERSONAGGI per-episodio via tozelabs is_voted: il subject/votes per
+  //      uuid episodio E per uuid serie tornano vuoti, quindi provo l'unico
+  //      altro meccanismo noto (characters.is_voted sull'endpoint episodio).
+  async function probeEpisodeVotesUUID(uid, jwt, seriesNames, nameToTvdb, nameToUuid, watchedEpisodeIds) {
+    const ratingBase = "https://msapi.tvtime.com/live/v1/ratings/votes";
+    const tozeEp = "https://api2.tozelabs.com/v2/episode";
+    const tozeFields = "characters.fields(id,uuid,name,actor_name,is_voted,vote_count)";
     const PER_SERIES_CAP = 40;   // max episodi provati per serie
-    const GLOBAL_CAP = 240;      // max chiamate totali del probe (2 per episodio)
+    const GLOBAL_CAP = 300;      // tetto chiamate totali del probe
     let calls = 0;
 
     for (const name of seriesNames) {
@@ -513,23 +520,33 @@
         .filter((e) => e.uuid && watchedEpisodeIds.has(e.id))
         .slice(0, PER_SERIES_CAP);
 
-      const ratingHits = [];
-      const charHits = [];
+      // (B) rating per-serie: una sola chiamata con l'uuid della serie
+      const serieUuid = nameToUuid.get(name);
+      let ratingBySeries = null;
+      if (serieUuid) {
+        const sr = await fetchProbe(`${ratingBase}/${serieUuid}/${uid}?set=stars_wording_scalev2`, jwt);
+        const ev = (unwrap(sr.data)?.episode_votes) || [];
+        ratingBySeries = { serie_uuid: serieUuid, status: sr.status, num_episode_votes: ev.length, sample: sr.data ?? sr.raw ?? sr.error };
+        calls++;
+      }
+
+      const ratingHits = [];   // (A) episode_votes per singolo episodio
+      const charHits = [];     // (C) personaggi is_voted per episodio
       let firstRating = null;
       let firstChar = null;
 
       for (const e of eps) {
         if (calls >= GLOBAL_CAP) break;
-        // rating a stelle, per uuid episodio
+        // (A) rating a stelle per uuid episodio -> campo episode_votes
         const rr = await fetchProbe(`${ratingBase}/${e.uuid}/${uid}?set=stars_wording_scalev2`, jwt);
         if (!firstRating) firstRating = { season: e.season, episode: e.number, uuid: e.uuid, status: rr.status, sample: rr.data ?? rr.raw ?? rr.error };
-        const ruv = (unwrap(rr.data)?.user_votes) || [];
-        if (ruv.length) ratingHits.push({ season: e.season, episode: e.number, name: e.name, uuid: e.uuid, user_votes: ruv });
-        // personaggi votati, per uuid episodio
-        const cr = await fetchProbe(`${subjBase}/${e.uuid}/user/${uid}`, jwt);
-        if (!firstChar) firstChar = { season: e.season, episode: e.number, uuid: e.uuid, status: cr.status, sample: cr.data ?? cr.raw ?? cr.error };
-        const cuv = (unwrap(cr.data)?.user_votes) || [];
-        if (cuv.length) charHits.push({ season: e.season, episode: e.number, name: e.name, uuid: e.uuid, user_votes: cuv });
+        const ev = (unwrap(rr.data)?.episode_votes) || [];
+        for (const v of ev) ratingHits.push({ season: e.season, episode: e.number, name: e.name, uuid: e.uuid, rating_id: v.rating_id, modified: v.modified });
+        // (C) personaggi via tozelabs is_voted (per id numerico episodio)
+        const cr = await fetchProbe(`${tozeEp}/${e.id}?fields=${tozeFields}`, jwt);
+        const chars = (unwrap(cr.data)?.characters) || [];
+        if (!firstChar) firstChar = { season: e.season, episode: e.number, ep_id: e.id, status: cr.status, num_characters: chars.length, has_is_voted: chars.some((c) => "is_voted" in c), sample: chars.slice(0, 2) };
+        for (const c of chars) if (c.is_voted) charHits.push({ season: e.season, episode: e.number, name: e.name, character_id: c.id, personaggio: c.name, attore: c.actor_name });
         calls += 2;
         await new Promise((r) => setTimeout(r, 120));
       }
@@ -540,11 +557,10 @@
           serie_name: name,
           tvdb,
           episodi_provati: eps.length,
-          rating_endpoint: `${ratingBase}/{ep_uuid}/${uid}?set=stars_wording_scalev2`,
-          char_endpoint: `${subjBase}/{ep_uuid}/user/${uid}`,
-          rating_hits: ratingHits,   // stelle per singolo episodio (se l'endpoint è giusto)
-          char_hits: charHits,       // personaggi per singolo episodio
-          first_rating_raw: firstRating,  // risposta grezza del 1° episodio (anche se vuota/404)
+          rating_hits: ratingHits,             // (A)
+          rating_by_series: ratingBySeries,    // (B)
+          char_hits: charHits,                 // (C)
+          first_rating_raw: firstRating,
           first_char_raw: firstChar,
         },
       });
