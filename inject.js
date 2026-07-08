@@ -239,25 +239,6 @@
     } catch { return null; }
   }
 
-  // Come fetchQuiet ma conserva lo status HTTP e il corpo grezzo: serve al
-  // probe diagnostico per distinguere "endpoint sbagliato" (404/4xx) da
-  // "nessun voto" (200 con lista vuota).
-  async function fetchProbe(target, jwt) {
-    try {
-      const res = await fetchTimeout(sidecarUrl(target), {
-        method: "GET",
-        headers: authHeaders(jwt),
-        credentials: "include",
-      });
-      const text = await res.text();
-      let data = null;
-      try { data = JSON.parse(text); } catch {}
-      return { status: res.status, ok: res.ok, data, raw: data ? undefined : text.slice(0, 300) };
-    } catch (e) {
-      return { status: 0, ok: false, data: null, error: String(e) };
-    }
-  }
-
   const unwrap = (d) => (d && d.data !== undefined ? d.data : d);
   const listOf = (d) => {
     const x = unwrap(d);
@@ -429,16 +410,15 @@
       // episodi: i rating per-puntata diventano precisi e di default.
       await pullEpisodeRatingsBulk(uid, jwt, nameToTvdb);
 
-      // === PROBE personaggi BULK: votes.tvtime.com/v1/votes/user/{uid} ===
-      // Dal browser dava MissingJWTToken (manca il Bearer); dall'estensione il
-      // JWT c'è. Verifico se esiste un bulk anche per i voti-personaggio: se sì,
-      // eliminiamo anche per i personaggi il giro per-episodio.
-      await probeCharBulk(uid, jwt);
-
-      // Fallback per-episodio (personaggi via tozelabs is_voted + rating). LENTO,
-      // opzionale: serve solo finché non confermiamo il bulk personaggi.
+      // === PERSONAGGI preferiti per-episodio ===
+      // I voti-personaggio degli EPISODI non hanno endpoint bulk (verificato:
+      // votes/user restituisce solo i film; show/season tozelabs falliscono).
+      // L'unica fonte è tozelabs characters.is_voted per singolo episodio.
+      // Concorrente sugli episodi visti (~1-2 min). Attivo di default via la
+      // checkbox del popup; disattivabile per un export più rapido.
+      // I personaggi dei FILM li prende già il pass 2 (pers_film_*).
       if (deepVotes) {
-        await pullEpisodeVotes(uid, jwt, votedSeriesNames, ratedSeriesNames, nameToTvdb, watchedEpisodeIds);
+        await pullEpisodeCharacters(uid, jwt, watchedEpisodeIds, nameToTvdb);
       }
     } catch (e) {
       relay("pullResult", { label: "pass2_error", status: 0, ok: false, error: String(e) });
@@ -526,83 +506,61 @@
     }
   }
 
-  // PROBE personaggi BULK: cerca l'equivalente del bulk rating per i voti
-  // personaggio. Dal browser questi path danno MissingJWTToken (manca il
-  // Bearer): dall'estensione il JWT è presente, quindi qui possono rispondere.
-  // Logga la risposta grezza per capire lo shape prima di cablarli.
-  async function probeCharBulk(uid, jwt) {
-    const candidates = [
-      `https://votes.tvtime.com/v1/votes/user/${uid}`,
-      `https://votes.tvtime.com/v1/votes/user/${uid}?entity_type=character`,
-    ];
-    for (let i = 0; i < candidates.length; i++) {
-      const r = await fetchProbe(candidates[i], jwt);
-      relay("pullResult", {
-        label: `PROBE_charbulk_${i}`, status: r.status, ok: r.ok,
-        data: { url: candidates[i].replace(String(uid), "{uid}"), status: r.status, sample: r.data ?? r.raw ?? r.error },
-      });
-      await new Promise((res) => setTimeout(res, 200));
-    }
-  }
-
-  // Pass 5: sugli episodi VISTI delle serie votate, raccoglie in un solo giro
-  // sia i PERSONAGGI votati (is_voted) sia il RATING a stelle dell'episodio.
-  async function pullEpisodeVotes(uid, jwt, votedSeriesNames, ratedSeriesNames, nameToTvdb, watchedEpisodeIds) {
+  // PERSONAGGI preferiti per-episodio: per ogni episodio visto interroga
+  // tozelabs e tiene i personaggi con is_voted=true. È l'unica fonte (nessun
+  // bulk esiste). Concorrente per stare sotto ~1-2 min anche su migliaia di
+  // episodi. Emette voti_personaggio_episodi_N nel formato del converter.
+  async function pullEpisodeCharacters(uid, jwt, watchedEpisodeIds, nameToTvdb) {
     const ep = "https://api2.tozelabs.com/v2/episode";
-    const fields = "characters.fields(id,name,actor_name,is_voted,vote_count)";
-    const ratingBase = "https://msapi.tvtime.com/prod/v1/ratings/votes/episode";
-
-    // CICLO COMPLETO: controllo tutti gli episodi VISTI di TUTTE le serie,
-    // perché l'aggregato di TV Time tronca a 5 serie e nasconde gli altri voti.
+    const fields = "characters.fields(id,name,actor_name,is_voted)";
     const tvdbByName = new Map();
     for (const [name, tv] of nameToTvdb) tvdbByName.set(tv, name);
+
+    // Target: tutti gli episodi VISTI presenti nella struct (l'aggregato tronca
+    // a 5 serie, quindi non si può filtrare per serie: vanno controllati tutti).
     const targets = [];
     for (const [tvdb, eps] of episodesBySeriesTvdb) {
       const serieName = tvdbByName.get(tvdb);
-      for (const e of eps) if (e.id && watchedEpisodeIds.has(e.id)) {
+      for (const e of eps) if (e.id != null && watchedEpisodeIds.has(e.id)) {
         targets.push({ serie_tvdb: tvdb, serie_name: serieName, ep_id: e.id, season: e.season, number: e.number, ep_name: e.name });
       }
     }
     if (!targets.length) return;
     relay("pullSetTotalAdd", { add: targets.length });
 
-    // Emetto i risultati a BLOCCHI (ogni 50 episodi) invece di accumulare tutto
-    // in memoria: evita il crash sugli account con migliaia di episodi.
+    // Emissione a blocchi (ogni 50) per non accumulare tutto in memoria.
     let charBuf = [];
-    let ratingBuf = [];
     let blockN = 0;
+    let done = 0;
     const flush = () => {
-      if (charBuf.length) { relay("pullResult", { label: `voti_personaggio_episodi_${blockN}`, status: 200, ok: true, data: { votes: charBuf } }); charBuf = []; }
-      if (ratingBuf.length) { relay("pullResult", { label: `rating_episodi_precisi_${blockN}`, status: 200, ok: true, data: { votes: ratingBuf } }); ratingBuf = []; }
-      blockN++;
+      if (charBuf.length) {
+        relay("pullResult", { label: `voti_personaggio_episodi_${blockN}`, status: 200, ok: true, data: { votes: charBuf } });
+        charBuf = [];
+        blockN++;
+      }
     };
 
-    let done = 0;
-    for (const t of targets) {
-      // personaggi votati
-      const res = await fetchQuiet(`${ep}/${t.ep_id}?fields=${fields}`, jwt);
-      for (const c of (unwrap(res)?.characters || [])) {
-        if (c.is_voted) charBuf.push({
-          serie_tvdb: t.serie_tvdb, serie_name: t.serie_name,
-          season: t.season, episode: t.number, episode_name: t.ep_name,
-          character_id: c.id, personaggio: c.name || undefined, attore: c.actor_name || undefined,
-        });
+    // Pool di worker concorrenti che pescano dalla stessa coda (indice condiviso).
+    const CONC = 6;
+    let idx = 0;
+    async function worker() {
+      while (idx < targets.length) {
+        const t = targets[idx++];
+        const res = await fetchQuiet(`${ep}/${t.ep_id}?fields=${fields}`, jwt);
+        for (const c of (unwrap(res)?.characters || [])) {
+          if (c.is_voted) charBuf.push({
+            serie_tvdb: t.serie_tvdb, serie_name: t.serie_name,
+            season: t.season, episode: t.number, episode_name: t.ep_name,
+            character_id: c.id, personaggio: c.name || undefined, attore: c.actor_name || undefined,
+          });
+        }
+        done++;
+        relay("pullProgressAdd", { add: 1 });
+        if (done % 50 === 0) flush();
+        await new Promise((r) => setTimeout(r, 50));  // throttle leggero per worker
       }
-      // rating a stelle
-      const rres = await fetchQuiet(`${ratingBase}/${t.ep_id}/${uid}?set=stars_wording_scalev2`, jwt);
-      for (const uv of (unwrap(rres)?.user_votes || [])) {
-        ratingBuf.push({
-          serie_tvdb: t.serie_tvdb, serie_name: t.serie_name,
-          season: t.season, episode: t.number, episode_name: t.ep_name,
-          episode_id: t.ep_id, rating_id: uv.rating_id,
-          voted_at: uv.created ? new Date(uv.created * 1000).toISOString().slice(0, 10) : undefined,
-        });
-      }
-      done++;
-      relay("pullProgressAdd", { add: 1 });
-      if (done % 50 === 0) flush();   // svuota il buffer in storage
-      await new Promise((r) => setTimeout(r, 110));
     }
+    await Promise.all(Array.from({ length: CONC }, () => worker()));
     flush();  // ultimo blocco
   }
 

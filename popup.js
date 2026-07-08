@@ -1,11 +1,115 @@
 const $ = (id) => document.getElementById(id);
 const ask = (message) => chrome.runtime.sendMessage(message);
 
-function humanBytes(n) {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
-  return `${(n / 1024 / 1024).toFixed(1)} MB`;
+// --- i18n -------------------------------------------------------------------
+// Tutte le stringhe dell'interfaccia in italiano e inglese. I valori possono
+// essere stringhe o funzioni (per i testi con parametri).
+const I18N = {
+  it: {
+    refreshTitle: "Ricomincia da capo se si blocca",
+    deepTitle: "Includi il personaggio preferito di ogni episodio",
+    deepWarn: "Un po' più lento: controlla gli episodi visti (di solito 1-2 minuti). Lascia la scheda aperta fino alla fine.",
+    consentText: "Confermo che questi sono i <b>miei</b> dati personali su TV Time e che voglio esportarli per uso personale o per trasferirli a un servizio di mia scelta (portabilità dei dati). Non esporterò dati di altri utenti.",
+    exportBtn: "Scarica i miei dati (ZIP)",
+    clearBtn: "Svuota",
+    exportRawBtn: "⚙ Scarica JSON grezzo (debug)",
+
+    tokenActive: (uid) => `Sessione attiva${uid ? ` · utente ${uid}` : ""}.`,
+    tokenHint: "Per iniziare: apri la sezione Profilo su TV Time e ricarica la pagina.",
+    pullDefault: "Scarica visti, film e show",
+    pullRunning: (done, total) => (total ? `Scarico… ${done}/${total}` : "Scarico…"),
+    progressRunning: (done, total) => (total ? `Raccolta in corso… ${done} di ${total}` : "Avvio della raccolta…"),
+    progressDone: "Raccolta completata. Puoi scaricare.",
+
+    sayReset: 'Reset eseguito. Puoi ripartire con "Scarica".',
+    sayNoUid: "Apri la sezione Profilo su TV Time e ricarica la pagina, poi riprova.",
+    sayNoTab: "Apri una scheda su app.tvtime.com, poi premi di nuovo.",
+    sayPulling: "Scarico dalla pagina TV Time…",
+    sayStarted: "Raccolta avviata. Su account grandi può richiedere qualche minuto: lascia la scheda aperta.",
+    sayTabNoResponse: "La scheda TV Time non risponde: ricaricala e riprova.",
+    sayNeedConsent: "Spunta prima la conferma di consenso per scaricare.",
+    sayPreparingZip: "Preparo l'archivio…",
+    sayZipDone: "Archivio scaricato: serie, film e liste.",
+    sayConvertError: (e) => "Errore nella conversione: " + e,
+    sayCleared: "Svuotato.",
+    sayPreparingRaw: "Preparo il JSON grezzo…",
+    sayRawDone: (n) => `JSON grezzo scaricato (${n} pull).`,
+  },
+  en: {
+    refreshTitle: "Start over if it gets stuck",
+    deepTitle: "Include your favourite character for each episode",
+    deepWarn: "A bit slower: it scans your watched episodes (usually 1-2 minutes). Keep the tab open until it finishes.",
+    consentText: "I confirm that this is <b>my</b> personal TV Time data and that I want to export it for personal use or to move it to a service of my choice (data portability). I will not export other users' data.",
+    exportBtn: "Download my data (ZIP)",
+    clearBtn: "Clear",
+    exportRawBtn: "⚙ Download raw JSON (debug)",
+
+    tokenActive: (uid) => `Session active${uid ? ` · user ${uid}` : ""}.`,
+    tokenHint: "To start: open your Profile section on TV Time and reload the page.",
+    pullDefault: "Download watched, movies & shows",
+    pullRunning: (done, total) => (total ? `Downloading… ${done}/${total}` : "Downloading…"),
+    progressRunning: (done, total) => (total ? `Collecting… ${done} of ${total}` : "Starting…"),
+    progressDone: "Done. You can download now.",
+
+    sayReset: 'Reset done. You can start again with "Download".',
+    sayNoUid: "Open your Profile section on TV Time and reload the page, then try again.",
+    sayNoTab: "Open a tab on app.tvtime.com, then press again.",
+    sayPulling: "Downloading from the TV Time page…",
+    sayStarted: "Collection started. On large accounts it can take a few minutes: keep the tab open.",
+    sayTabNoResponse: "The TV Time tab is not responding: reload it and try again.",
+    sayNeedConsent: "Tick the consent confirmation first to download.",
+    sayPreparingZip: "Preparing the archive…",
+    sayZipDone: "Archive downloaded: shows, movies and lists.",
+    sayConvertError: (e) => "Conversion error: " + e,
+    sayCleared: "Cleared.",
+    sayPreparingRaw: "Preparing the raw JSON…",
+    sayRawDone: (n) => `Raw JSON downloaded (${n} pulls).`,
+  },
+};
+
+let lang = "it";
+function detectLang() {
+  const saved = localStorage.getItem("kitazo_lang");
+  if (saved === "it" || saved === "en") return saved;
+  return (navigator.language || "").toLowerCase().startsWith("it") ? "it" : "en";
 }
+// t("key") o t("key", ...args) per i valori funzione.
+function t(key, ...args) {
+  const v = I18N[lang][key];
+  return typeof v === "function" ? v(...args) : v;
+}
+
+// Applica le stringhe statiche (marcate con data-i18n / data-i18n-title).
+function applyStaticI18n() {
+  document.documentElement.lang = lang;
+  for (const el of document.querySelectorAll("[data-i18n]")) {
+    const key = el.getAttribute("data-i18n");
+    const val = t(key);
+    if (val == null) continue;
+    if (key === "consentText") el.innerHTML = val;   // contiene <b>
+    else el.textContent = val;
+  }
+  for (const el of document.querySelectorAll("[data-i18n-title]")) {
+    const val = t(el.getAttribute("data-i18n-title"));
+    if (val != null) el.title = val;
+  }
+  for (const b of document.querySelectorAll(".lang-btn")) {
+    b.classList.toggle("active", b.dataset.lang === lang);
+  }
+}
+
+function setLang(next) {
+  lang = next;
+  localStorage.setItem("kitazo_lang", next);
+  applyStaticI18n();
+  refresh();   // aggiorna anche i testi dinamici (token, progress, pull)
+}
+
+for (const b of document.querySelectorAll(".lang-btn")) {
+  b.addEventListener("click", () => setLang(b.dataset.lang));
+}
+
+// --- util -------------------------------------------------------------------
 function say(t) { $("status").textContent = t; }
 
 // Rotellina di refresh: sblocca uno scan inceppato e riparte da capo.
@@ -13,7 +117,7 @@ $("refresh").addEventListener("click", async () => {
   const btn = $("refresh");
   btn.classList.add("spinning");
   await ask({ type: "resetPull" });   // azzera stato + risultati parziali
-  say("Reset eseguito. Puoi ripartire con \"Scarica\".");
+  say(t("sayReset"));
   setTimeout(() => btn.classList.remove("spinning"), 600);
   refresh();
 });
@@ -23,9 +127,7 @@ async function refresh() {
 
   const tokenEl = $("token");
   tokenEl.classList.toggle("on", s.hasSession);
-  $("tokenMsg").textContent = s.hasSession
-    ? `Sessione attiva${s.uid ? ` · utente ${s.uid}` : ""}.`
-    : "Per iniziare: apri la sezione Profilo su TV Time e ricarica la pagina.";
+  $("tokenMsg").textContent = s.hasSession ? t("tokenActive", s.uid) : t("tokenHint");
 
   const st = s.pullState || { running: false, done: 0, total: 0 };
   const running = st.running;
@@ -36,27 +138,19 @@ async function refresh() {
     progressBox.hidden = false;
     const pct = st.total ? Math.round((st.done / st.total) * 100) : 0;
     $("progressFill").style.width = `${pct}%`;
-    $("progressText").textContent = st.total
-      ? `Raccolta in corso… ${st.done} di ${st.total}`
-      : "Avvio della raccolta…";
+    $("progressText").textContent = t("progressRunning", st.done, st.total);
   } else if (s.pulls.length > 0) {
     // finito: barra piena, messaggio pronto
     progressBox.hidden = false;
     $("progressFill").style.width = "100%";
-    $("progressText").textContent = "Raccolta completata. Puoi scaricare.";
+    $("progressText").textContent = t("progressDone");
   } else {
     progressBox.hidden = true;
   }
 
   // Pulsante pull: disabilitato senza sessione o mentre gira
   $("pull").disabled = !s.hasSession || running;
-  if (running) {
-    $("pull").textContent = st.total
-      ? `Scarico… ${st.done}/${st.total}`
-      : "Scarico…";
-  } else {
-    $("pull").textContent = "Scarica visti, film e show";
-  }
+  $("pull").textContent = running ? t("pullRunning", st.done, st.total) : t("pullDefault");
 
   const hasData = s.captured > 0 || s.pulls.length > 0;
   const consented = $("consent").checked;
@@ -68,7 +162,6 @@ async function refresh() {
   $("export").disabled = running || !hasData || !consented;
   // Debug: solo dati + pull finito (no consenso: è per uso tecnico)
   $("exportRaw").disabled = running || !hasData;
-
 }
 
 // --- pull attivo: parte dalla pagina ---------------------------------------
@@ -77,28 +170,28 @@ $("pull").addEventListener("click", async () => {
   // Il token non è più obbligatorio: le chiamate al proxy sono same-origin e
   // autenticate dai cookie. Serve solo lo user id (dall'URL della pagina).
   if (!uid) {
-    say("Apri la sezione Profilo su TV Time e ricarica la pagina, poi riprova.");
+    say(t("sayNoUid"));
     return;
   }
 
   const tabs = await chrome.tabs.query({ url: "https://*.tvtime.com/*" });
   const tab = tabs.find((t) => t.active) || tabs[0];
   if (!tab) {
-    say("Apri una scheda su app.tvtime.com, poi premi di nuovo.");
+    say(t("sayNoTab"));
     return;
   }
 
   $("pull").disabled = true;
-  $("pull").textContent = "Scarico…";
+  $("pull").textContent = t("pullRunning", 0, 0);
   // stato "running" subito, così l'export resta bloccato senza finestre
   await ask({ type: "pullStart", total: 0 });
-  say("Scarico dalla pagina TV Time…");
+  say(t("sayPulling"));
   try {
     const deepVotes = $("deepVotes").checked;
     await chrome.tabs.sendMessage(tab.id, { type: "startPull", jwt, uid, deepVotes });
-    say("Raccolta avviata. Su account grandi può richiedere diversi minuti: lascia la scheda aperta.");
+    say(t("sayStarted"));
   } catch {
-    say("La scheda TV Time non risponde: ricaricala e riprova.");
+    say(t("sayTabNoResponse"));
     await ask({ type: "pullDone" }); // sblocco: il pull non è partito
     $("pull").disabled = false;
   }
@@ -112,10 +205,10 @@ $("consent").addEventListener("change", () => {
 
 $("export").addEventListener("click", async () => {
   if (!$("consent").checked) {
-    say("Spunta prima la conferma di consenso per scaricare.");
+    say(t("sayNeedConsent"));
     return;
   }
-  say("Preparo l'archivio…");
+  say(t("sayPreparingZip"));
   const { pulls } = await ask({ type: "dump" });
 
   // Ricostruisco il payload grezzo (con consenso) e lo passo al convertitore,
@@ -139,15 +232,15 @@ $("export").addEventListener("click", async () => {
     a.download = `tvtime-migrazione-${stamp}.zip`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 30_000);
-    say("Archivio scaricato: serie, film e liste.");
+    say(t("sayZipDone"));
   } catch (e) {
-    say("Errore nella conversione: " + String(e));
+    say(t("sayConvertError", String(e)));
   }
 });
 
 $("clear").addEventListener("click", async () => {
   await ask({ type: "clear" });
-  say("Svuotato.");
+  say(t("sayCleared"));
   refresh();
 });
 
@@ -155,7 +248,7 @@ $("clear").addEventListener("click", async () => {
 // senza pulizia né conversione. Utile per ispezionare campi non documentati
 // (es. extended_comment dei commenti con foto).
 $("exportRaw").addEventListener("click", async () => {
-  say("Preparo il JSON grezzo…");
+  say(t("sayPreparingRaw"));
   const { captures, pulls } = await ask({ type: "dump" });
   const payload = {
     exportedAt: new Date().toISOString(),
@@ -170,8 +263,11 @@ $("exportRaw").addEventListener("click", async () => {
   a.download = `tvtime-raw-debug-${stamp}.json`;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 30_000);
-  say(`JSON grezzo scaricato (${pulls.length} pull).`);
+  say(t("sayRawDone", pulls.length));
 });
 
+// --- avvio ------------------------------------------------------------------
+lang = detectLang();
+applyStaticI18n();
 refresh();
 setInterval(refresh, 1200);

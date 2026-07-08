@@ -35,8 +35,20 @@
         font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em;
         text-transform: uppercase; color: var(--kitazo);
       }
+      .lang {
+        margin-left: auto; flex: none; display: flex;
+        border: 1px solid var(--rule); border-radius: 8px; overflow: hidden;
+      }
+      .lang-btn {
+        border: 0; border-radius: 0; padding: 0 9px; height: 30px;
+        font-size: 11px; font-weight: 600; letter-spacing: 0.03em;
+        background: #fff; color: var(--muted); cursor: pointer;
+      }
+      .lang-btn + .lang-btn { border-left: 1px solid var(--rule); }
+      .lang-btn:hover { color: var(--accent); }
+      .lang-btn.active { background: var(--accent); color: #fff; }
       .refresh-btn {
-        margin-left: auto; flex: none;
+        margin-left: 8px; flex: none;
         width: 30px; height: 30px; padding: 0;
         display: flex; align-items: center; justify-content: center;
         border: 1px solid var(--rule); border-radius: 8px;
@@ -127,7 +139,11 @@
         <div class="brand-name">TV Time Extractor</div>
         <div class="brand-by">by Kitazo</div>
       </div>
-      <button id="refresh" class="refresh-btn" title="Ricomincia da capo se si blocca">
+      <div class="lang" id="lang">
+        <button type="button" class="lang-btn" data-lang="it">IT</button>
+        <button type="button" class="lang-btn" data-lang="en">EN</button>
+      </div>
+      <button id="refresh" class="refresh-btn" data-i18n-title="refreshTitle" title="Ricomincia da capo se si blocca">
         <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
         </svg>
@@ -140,10 +156,10 @@
     </div>
 
     <label class="deep-opt">
-      <input type="checkbox" id="deepVotes" />
+      <input type="checkbox" id="deepVotes" checked />
       <span>
-        <b>Includi personaggi e rating votati per ogni episodio</b>
-        <span class="deep-warn">Molto più lento: controlla tutti gli episodi visti uno per uno. Su account con tante serie può richiedere <b>parecchi minuti</b>. Lascia la scheda aperta fino alla fine.</span>
+        <b data-i18n="deepTitle">Includi il personaggio preferito di ogni episodio</b>
+        <span class="deep-warn" data-i18n="deepWarn">Un po' più lento: controlla gli episodi visti (di solito 1-2 minuti). Lascia la scheda aperta fino alla fine.</span>
       </span>
     </label>
 
@@ -157,7 +173,7 @@
     <div class="consent" id="consentBox">
       <label class="consent-label">
         <input type="checkbox" id="consent" />
-        <span>
+        <span data-i18n="consentText">
           Confermo che questi sono i <b>miei</b> dati personali su TV Time e che
           voglio esportarli per uso personale o per trasferirli a un servizio di
           mia scelta (portabilità dei dati). Non esporterò dati di altri utenti.
@@ -166,11 +182,11 @@
     </div>
 
     <div class="actions">
-      <button id="export" disabled>Scarica i miei dati (ZIP)</button>
-      <button id="clear" disabled>Svuota</button>
+      <button id="export" data-i18n="exportBtn" disabled>Scarica i miei dati (ZIP)</button>
+      <button id="clear" data-i18n="clearBtn" disabled>Svuota</button>
     </div>
 
-    <button id="exportRaw" class="debug-btn" disabled>⚙ Scarica JSON grezzo (debug)</button>
+    <button id="exportRaw" class="debug-btn" data-i18n="exportRawBtn" disabled>⚙ Scarica JSON grezzo (debug)</button>
 
     <p id="status"></p>
     <script src="converter.js"></script>
