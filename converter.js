@@ -222,11 +222,28 @@
     };
 
     // COMMENTI
+    // Mappa uuid EPISODIO -> tvdb della SERIE (dalla struct). Serve ai commenti
+    // sugli episodi: il loro entity_uuid è l'uuid dell'EPISODIO, non della serie,
+    // quindi non si trova in serieByUuid. Senza questo, i commenti-episodio
+    // restavano senza tvdb_id e venivano scartati in import.
+    const episodeUuidToTvdb = new Map();
+    for (const p of pulls) {
+      const mm = /^struct_(\d+)$/.exec(p.label || "");
+      if (!mm || !p.ok) continue;
+      const tvdb = Number(mm[1]);
+      const eps = p?.data?.episodes || p?.data?.data?.episodes || [];
+      for (const e of eps) if (e && e.uuid) episodeUuidToTvdb.set(e.uuid, tvdb);
+    }
+
     const commentiRaw = P("commenti");
     const commenti = (Array.isArray(commentiRaw) ? commentiRaw : []).map((c) => {
       // Aggancio l'entity_uuid al titolo vero, secondo il tipo.
       let tvdb_id, imdb_id;
-      if (c.entity_type === "series" || c.entity_type === "episode") {
+      if (c.entity_type === "episode") {
+        // entity_uuid = uuid episodio -> risolvo la serie; fallback: a volte è
+        // già l'uuid della serie.
+        tvdb_id = episodeUuidToTvdb.get(c.entity_uuid) ?? serieByUuid.get(c.entity_uuid)?.tvdb_id;
+      } else if (c.entity_type === "series") {
         tvdb_id = serieByUuid.get(c.entity_uuid)?.tvdb_id;
       } else if (c.entity_type === "movie") {
         const b = filmByUuid.get(c.entity_uuid) || {};
