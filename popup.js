@@ -7,8 +7,8 @@ const ask = (message) => chrome.runtime.sendMessage(message);
 const I18N = {
   it: {
     refreshTitle: "Ricomincia da capo se si blocca",
-    deepTitle: "Includi il personaggio preferito di ogni episodio",
-    deepWarn: "Un po' più lento: controlla gli episodi visti (di solito 1-2 minuti). Lascia la scheda aperta fino alla fine.",
+    deepTitle: "Trova i personaggi preferiti dei singoli episodi",
+    deepWarn: "Serve SOLO a questo. Scansiona gli episodi visti uno per uno (di solito 1-2 minuti). Se la togli, tutto il resto — visti, film, rating, liste, commenti, preferiti — viene scaricato comunque. Lascia la scheda aperta fino alla fine.",
     consentText: "Confermo che questi sono i <b>miei</b> dati personali su TV Time e che voglio esportarli per uso personale o per trasferirli a un servizio di mia scelta (portabilità dei dati). Non esporterò dati di altri utenti.",
     exportBtn: "Scarica i miei dati (ZIP)",
     clearBtn: "Svuota",
@@ -37,8 +37,8 @@ const I18N = {
   },
   en: {
     refreshTitle: "Start over if it gets stuck",
-    deepTitle: "Include your favourite character for each episode",
-    deepWarn: "A bit slower: it scans your watched episodes (usually 1-2 minutes). Keep the tab open until it finishes.",
+    deepTitle: "Find your favourite characters for individual episodes",
+    deepWarn: "This is ALL it does. It scans your watched episodes one by one (usually 1-2 minutes). If you untick it, everything else — watched, movies, ratings, lists, comments, favourites — is still downloaded. Keep the tab open until it finishes.",
     consentText: "I confirm that this is <b>my</b> personal TV Time data and that I want to export it for personal use or to move it to a service of my choice (data portability). I will not export other users' data.",
     exportBtn: "Download my data (ZIP)",
     clearBtn: "Clear",
