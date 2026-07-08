@@ -516,6 +516,20 @@
     const tvdbByName = new Map();
     for (const [name, tv] of nameToTvdb) tvdbByName.set(tv, name);
 
+    // Fetch con retry: fetchQuiet ingoia errori/timeout restituendo null. Sotto
+    // concorrenza un fetch può fallire per rate-limit transitorio: se non
+    // riprovassimo, quel voto verrebbe perso in silenzio (declassato all'aggregato).
+    // Ritorna l'array characters, oppure null se fallisce dopo i tentativi.
+    async function fetchChars(epId) {
+      for (let i = 0; i < 3; i++) {
+        const res = await fetchQuiet(`${ep}/${epId}?fields=${fields}`, jwt);
+        const chars = unwrap(res)?.characters;
+        if (Array.isArray(chars)) return chars;
+        await new Promise((r) => setTimeout(r, 300 * (i + 1)));  // backoff
+      }
+      return null;
+    }
+
     // Target: tutti gli episodi VISTI presenti nella struct (l'aggregato tronca
     // a 5 serie, quindi non si può filtrare per serie: vanno controllati tutti).
     const targets = [];
@@ -543,16 +557,21 @@
     // Pool di worker concorrenti che pescano dalla stessa coda (indice condiviso).
     const CONC = 6;
     let idx = 0;
+    let failed = 0;   // episodi non recuperati dopo i retry (per diagnostica)
     async function worker() {
       while (idx < targets.length) {
         const t = targets[idx++];
-        const res = await fetchQuiet(`${ep}/${t.ep_id}?fields=${fields}`, jwt);
-        for (const c of (unwrap(res)?.characters || [])) {
-          if (c.is_voted) charBuf.push({
-            serie_tvdb: t.serie_tvdb, serie_name: t.serie_name,
-            season: t.season, episode: t.number, episode_name: t.ep_name,
-            character_id: c.id, personaggio: c.name || undefined, attore: c.actor_name || undefined,
-          });
+        const chars = await fetchChars(t.ep_id);
+        if (chars === null) {
+          failed++;
+        } else {
+          for (const c of chars) {
+            if (c.is_voted) charBuf.push({
+              serie_tvdb: t.serie_tvdb, serie_name: t.serie_name,
+              season: t.season, episode: t.number, episode_name: t.ep_name,
+              character_id: c.id, personaggio: c.name || undefined, attore: c.actor_name || undefined,
+            });
+          }
         }
         done++;
         relay("pullProgressAdd", { add: 1 });
@@ -562,6 +581,9 @@
     }
     await Promise.all(Array.from({ length: CONC }, () => worker()));
     flush();  // ultimo blocco
+    // Meta diagnostica: quanti episodi non sono stati recuperati (se >0, alcuni
+    // voti potrebbero mancare e ripiegare sull'aggregato).
+    relay("pullResult", { label: "voti_personaggio_scan_meta", status: 200, ok: true, data: { episodi_totali: targets.length, falliti: failed } });
   }
 
   // Risolve tvdb_id/imdb_id dei film presenti solo nelle liste (mai seguiti).
