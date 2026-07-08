@@ -1,0 +1,10 @@
+<svg width="40" height="40" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <rect width="100" height="100" rx="22" fill="#b873ff"/>
+  <!-- coroncina gialla -->
+  <path d="M18 30 L24 14 L30 24 L37 12 L40 30 Z" fill="#ffc531"/>
+  <!-- accenti verde/rosa -->
+  <path d="M78 22 L92 20 L90 36 L76 34 Z" fill="#01febe"/>
+  <path d="M80 40 L92 40 L90 50 L80 50 Z" fill="#ff3b7a"/>
+  <!-- K nera -->
+  <path d="M34 30 L46 30 L46 52 L64 30 L78 30 L58 54 L80 82 L65 82 L46 58 L46 82 L34 82 Z" fill="#000"/>
+</svg>

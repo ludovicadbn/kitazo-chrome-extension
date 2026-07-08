@@ -1,0 +1,15 @@
+# Dipendenze
+node_modules/
+
+# Output dell'estensione / dello script di conversione
+tvtime-export-*.json
+tvtime-migrazione*.zip
+*.har
+
+# File di sistema
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/

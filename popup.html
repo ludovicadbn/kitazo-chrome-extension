@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="it">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      :root {
+        --ink: #14161a;
+        --paper: #faf8ff;
+        --rule: #e6dcfa;
+        --muted: #6b7280;
+        --accent: #8b3bff;
+        --accent-deep: #6d1fe0;
+        --live: #0aa06e;
+        --warn: #b4552d;
+        --kitazo: #b873ff;
+        --mono: ui-monospace, "SF Mono", "Cascadia Code", Menlo, monospace;
+        --sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      * { box-sizing: border-box; }
+      body {
+        width: 350px; margin: 0; padding: 16px;
+        background: var(--paper); color: var(--ink);
+        font-family: var(--sans); font-size: 13px;
+      }
+      .brand {
+        display: flex; align-items: center; gap: 10px; margin: 0 0 14px;
+      }
+      .brand-logo { width: 34px; height: 34px; border-radius: 9px; flex: none; }
+      .brand-text { line-height: 1.15; }
+      .brand-name {
+        font-family: var(--sans); font-size: 14px; font-weight: 700;
+        color: var(--ink); letter-spacing: -0.01em;
+      }
+      .brand-by {
+        font-family: var(--mono); font-size: 9.5px; letter-spacing: 0.12em;
+        text-transform: uppercase; color: var(--kitazo);
+      }
+      .refresh-btn {
+        margin-left: auto; flex: none;
+        width: 30px; height: 30px; padding: 0;
+        display: flex; align-items: center; justify-content: center;
+        border: 1px solid var(--rule); border-radius: 8px;
+        background: #fff; color: var(--muted); cursor: pointer;
+      }
+      .refresh-btn:hover { border-color: var(--accent); color: var(--accent); }
+      .refresh-btn:active svg { animation: spin 0.5s ease; }
+      .refresh-btn.spinning svg { animation: spin 0.8s linear infinite; }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      .token {
+        display: flex; align-items: center; gap: 7px;
+        padding: 8px 10px; border-radius: 6px;
+        border: 1px solid var(--rule); background: #fff;
+        font-size: 12px; margin-bottom: 12px;
+      }
+      .token .dot {
+        width: 8px; height: 8px; border-radius: 50%;
+        background: var(--warn); flex: none;
+      }
+      .token.on .dot { background: var(--live); }
+      .token .msg { color: var(--muted); }
+      .token.on .msg { color: var(--ink); }
+      .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 14px; }
+      button {
+        font: inherit; font-size: 12px; padding: 8px 10px;
+        border: 1px solid var(--rule); border-radius: 6px;
+        background: #fff; color: var(--ink); cursor: pointer;
+      }
+      button:hover { border-color: var(--ink); }
+      button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+      button.primary { grid-column: 1 / -1; background: var(--accent); border-color: var(--accent); color: #fff; }
+      button.primary:hover { background: var(--accent-deep); }
+      button:disabled { opacity: 0.45; cursor: default; }
+      #status { min-height: 16px; margin: 10px 0 0; font-size: 11px; color: var(--muted); }
+      .debug-btn {
+        width: 100%; margin-top: 8px; padding: 7px;
+        font-size: 11px; color: var(--muted);
+        background: transparent; border: 1px dashed var(--rule);
+        border-radius: 6px; cursor: pointer;
+      }
+      .debug-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+      .debug-btn:disabled { opacity: 0.4; cursor: default; }
+      .progress { margin-top: 14px; }
+      .progress-bar {
+        height: 6px; border-radius: 3px; background: var(--rule); overflow: hidden;
+      }
+      .progress-bar span {
+        display: block; height: 100%; width: 0%;
+        background: var(--accent); border-radius: 3px;
+        transition: width 0.3s ease;
+      }
+      .progress-text {
+        margin: 7px 0 0; font-size: 12px; color: var(--muted);
+      }
+      .deep-opt {
+        display: flex; gap: 9px; align-items: flex-start;
+        margin: 6px 0 12px; padding: 10px 12px;
+        border: 1px solid var(--rule); border-radius: 8px;
+        background: #fff; font-size: 12px; cursor: pointer;
+      }
+      .deep-opt input { margin-top: 2px; flex: none; accent-color: var(--accent); width: 15px; height: 15px; }
+      .deep-opt b { font-weight: 600; color: var(--ink); }
+      .deep-warn {
+        display: block; margin-top: 4px; font-size: 11px;
+        color: var(--warn); line-height: 1.45;
+      }
+      .consent {
+        margin-top: 12px; padding: 10px 12px;
+        border: 1px solid var(--rule); border-radius: 8px;
+        background: #fff;
+      }
+      .consent-label {
+        display: flex; gap: 9px; align-items: flex-start;
+        font-size: 11.5px; line-height: 1.5; color: var(--ink); cursor: pointer;
+      }
+      .consent-label input {
+        margin-top: 2px; flex: none; accent-color: var(--accent);
+        width: 15px; height: 15px;
+      }
+      .consent-label b { font-weight: 600; }
+      .consent.checked { border-color: var(--live); background: #f4faf6; }
+    </style>
+  </head>
+  <body>
+    <div class="brand">
+      <img class="brand-logo" src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCAxMDAgMTAwIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPgogIDxyZWN0IHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIiByeD0iMjIiIGZpbGw9IiNiODczZmYiLz4KICA8IS0tIGNvcm9uY2luYSBnaWFsbGEgLS0+CiAgPHBhdGggZD0iTTE4IDMwIEwyNCAxNCBMMzAgMjQgTDM3IDEyIEw0MCAzMCBaIiBmaWxsPSIjZmZjNTMxIi8+CiAgPCEtLSBhY2NlbnRpIHZlcmRlL3Jvc2EgLS0+CiAgPHBhdGggZD0iTTc4IDIyIEw5MiAyMCBMOTAgMzYgTDc2IDM0IFoiIGZpbGw9IiMwMWZlYmUiLz4KICA8cGF0aCBkPSJNODAgNDAgTDkyIDQwIEw5MCA1MCBMODAgNTAgWiIgZmlsbD0iI2ZmM2I3YSIvPgogIDwhLS0gSyBuZXJhIC0tPgogIDxwYXRoIGQ9Ik0zNCAzMCBMNDYgMzAgTDQ2IDUyIEw2NCAzMCBMNzggMzAgTDU4IDU0IEw4MCA4MiBMNjUgODIgTDQ2IDU4IEw0NiA4MiBMMzQgODIgWiIgZmlsbD0iIzAwMCIvPgo8L3N2Zz4K" alt="Kitazo" />
+      <div class="brand-text">
+        <div class="brand-name">TV Time Extractor</div>
+        <div class="brand-by">by Kitazo</div>
+      </div>
+      <button id="refresh" class="refresh-btn" title="Ricomincia da capo se si blocca">
+        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+        </svg>
+      </button>
+    </div>
+
+    <div class="token" id="token">
+      <span class="dot"></span>
+      <span class="msg" id="tokenMsg">In attesa della sessione…</span>
+    </div>
+
+    <label class="deep-opt">
+      <input type="checkbox" id="deepVotes" />
+      <span>
+        <b>Includi personaggi e rating votati per ogni episodio</b>
+        <span class="deep-warn">Molto più lento: controlla tutti gli episodi visti uno per uno. Su account con tante serie può richiedere <b>parecchi minuti</b>. Lascia la scheda aperta fino alla fine.</span>
+      </span>
+    </label>
+
+    <button class="primary" id="pull" disabled>Scarica visti, film e show</button>
+
+    <div class="progress" id="progressBox" hidden>
+      <div class="progress-bar"><span id="progressFill"></span></div>
+      <p class="progress-text" id="progressText">Raccolta in corso…</p>
+    </div>
+
+    <div class="consent" id="consentBox">
+      <label class="consent-label">
+        <input type="checkbox" id="consent" />
+        <span>
+          Confermo che questi sono i <b>miei</b> dati personali su TV Time e che
+          voglio esportarli per uso personale o per trasferirli a un servizio di
+          mia scelta (portabilità dei dati). Non esporterò dati di altri utenti.
+        </span>
+      </label>
+    </div>
+
+    <div class="actions">
+      <button id="export" disabled>Scarica i miei dati (ZIP)</button>
+      <button id="clear" disabled>Svuota</button>
+    </div>
+
+    <button id="exportRaw" class="debug-btn" disabled>⚙ Scarica JSON grezzo (debug)</button>
+
+    <p id="status"></p>
+    <script src="converter.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>
