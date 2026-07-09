@@ -441,8 +441,76 @@
     return { serieOut, filmOut, listeOut };
   }
 
-  function buildZipBlob(raw) {
+  // ---- sealing dei dati "difficili" ----------------------------------------
+  // I dati base (serie/film/liste viste) restano leggibili nello ZIP. I dati che
+  // ci sono costati reverse-engineering — rating, personaggi preferiti, commenti
+  // — vengono cifrati con la chiave PUBBLICA di Kitazo (qui sotto), così solo il
+  // nostro server (che ha la chiave privata) può rileggerli: un'altra app non può
+  // sfruttare il nostro export. Schema ibrido RSA-OAEP(SHA-256) + AES-256-GCM.
+  const KITAZO_PUB_SPKI_B64 =
+    "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAs8pTo4yTfOSchbpDtszgNtDITlA7rDpuBCQhAAYivvC7xmWLdq9GygSZZokeDoLugG4x53aeQbsmyWLrry3fBTHpTOefYhju33UKp/UUzR9aEe78K6DtZLkZH6rQ7cq4lUBA3zfzqS5hsSY18s5z4cVh/Aa9OS/EApeuQy/CC/06rimSziAgwmvsxteFcOGTUogMTyCARzHqG63Dv/aae0z2lclnPPbIlgmUFYZlzQyVAIZ7Ns2R5wwNf4RSrg/VSzKLabWTQkJ2FfOJua7zceXxHDovVC93TIAgO/UvVA1k9zcVND9aZDOB74ShuD+NS8b4uy3IFHvXNsKYlX5IHQIDAQAB";
+
+  function b64FromBytes(bytes) {
+    let s = "";
+    for (let i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
+    return btoa(s);
+  }
+  function bytesFromB64(b64) {
+    const bin = atob(b64);
+    const out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out;
+  }
+
+  let pubKeyPromise = null;
+  function getPubKey() {
+    if (!pubKeyPromise) {
+      pubKeyPromise = crypto.subtle.importKey(
+        "spki",
+        bytesFromB64(KITAZO_PUB_SPKI_B64),
+        { name: "RSA-OAEP", hash: "SHA-256" },
+        false,
+        ["encrypt"]
+      );
+    }
+    return pubKeyPromise;
+  }
+
+  // Cifra un oggetto → envelope { v, k, iv, d } (tutti base64). Il server lo
+  // rimette al posto di `_kitazo_sealed`.
+  async function seal(obj) {
+    const aesKey = await crypto.subtle.generateKey({ name: "AES-GCM", length: 256 }, true, ["encrypt"]);
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const pt = enc.encode(JSON.stringify(obj));
+    const ct = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, aesKey, pt)); // ciphertext||tag(16)
+    const rawAes = new Uint8Array(await crypto.subtle.exportKey("raw", aesKey));
+    const wrapped = new Uint8Array(await crypto.subtle.encrypt({ name: "RSA-OAEP" }, await getPubKey(), rawAes));
+    return { v: 1, k: b64FromBytes(wrapped), iv: b64FromBytes(iv), d: b64FromBytes(ct) };
+  }
+
+  // Sostituisce i campi indicati con un unico blob cifrato `_kitazo_sealed`.
+  async function sealFields(out, fields) {
+    const payload = {};
+    for (const f of fields) {
+      if (f in out) { payload[f] = out[f]; delete out[f]; }
+    }
+    out._kitazo_sealed = await seal(payload);
+    return out;
+  }
+
+  async function buildZipBlob(raw) {
     const { serieOut, filmOut, listeOut } = convert(raw);
+    try {
+      await Promise.all([
+        sealFields(serieOut, ["rating_episodi", "personaggi_votati"]),
+        sealFields(filmOut, ["rating_film", "personaggi_votati"]),
+        sealFields(listeOut, ["commenti"]),
+      ]);
+    } catch (e) {
+      // Se la cifratura non è disponibile per qualunque motivo, meglio un export
+      // in chiaro che un export mancato: i dati restano quelli, solo non protetti.
+      console.warn("[kitazo] sealing non riuscito, export in chiaro:", e);
+    }
     return makeZipBlob([
       { name: "tvtime-serie.json", text: JSON.stringify(serieOut, null, 2) },
       { name: "tvtime-film.json",  text: JSON.stringify(filmOut, null, 2) },

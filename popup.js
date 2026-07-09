@@ -216,7 +216,7 @@ $("export").addEventListener("click", async () => {
   };
 
   try {
-    const blob = window.TVTimeConverter.buildZipBlob(raw);
+    const blob = await window.TVTimeConverter.buildZipBlob(raw);
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     const stamp = new Date().toISOString().slice(0, 10);
