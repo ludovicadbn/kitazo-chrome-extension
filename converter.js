@@ -235,6 +235,10 @@
       for (const e of eps) if (e && e.uuid) episodeUuidToTvdb.set(e.uuid, tvdb);
     }
 
+    // Mappa url originale -> data URI, per le foto scaricate in-pagina (referer
+    // tvtime). Quando presente, l'export porta l'immagine incorporata invece del
+    // link CloudFront che risponde 403 fuori da TV Time.
+    const commentImages = P("commenti_immagini") || {};
     const commentiRaw = P("commenti");
     const commenti = (Array.isArray(commentiRaw) ? commentiRaw : []).map((c) => {
       // Aggancio l'entity_uuid al titolo vero, secondo il tipo.
@@ -252,6 +256,9 @@
       // Immagine/meme allegato al commento: TV Time lo mette nel campo "image"
       // (con expand=all). Struttura: image.url + format/width/height/meme_id.
       const img = c.image && typeof c.image === "object" ? c.image : null;
+      // Preferisci l'immagine incorporata (data URI): quella sopravvive alla
+      // migrazione. Fallback all'URL CloudFront originale se non scaricata.
+      const embedded = img?.url ? commentImages[img.url] : null;
       return {
         comment_id: c.comment_id,
         entity_type: c.entity_type,
@@ -259,7 +266,7 @@
         tvdb_id,
         imdb_id,
         text: c.text || undefined,
-        image_url: img?.url || undefined,        // URL foto/meme allegato
+        image_url: embedded || img?.url || undefined,  // data URI se scaricata, altrimenti URL originale
         image_format: img?.url ? (img.format || undefined) : undefined,
         created_at: cleanDate(c.created_at),
         is_spoiler: c.is_spoiler || undefined,

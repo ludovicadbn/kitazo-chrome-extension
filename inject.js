@@ -420,6 +420,10 @@
       if (deepVotes) {
         await pullEpisodeCharacters(uid, jwt, watchedEpisodeIds, nameToTvdb);
       }
+
+      // Foto/meme allegati ai commenti: scaricati qui (referer tvtime OK) e
+      // incorporati nello ZIP come data URI.
+      await pullCommentImages(results.commenti);
     } catch (e) {
       relay("pullResult", { label: "pass2_error", status: 0, ok: false, error: String(e) });
     }
@@ -584,6 +588,52 @@
     // Meta diagnostica: quanti episodi non sono stati recuperati (se >0, alcuni
     // voti potrebbero mancare e ripiegare sull'aggregato).
     relay("pullResult", { label: "voti_personaggio_scan_meta", status: 200, ok: true, data: { episodi_totali: targets.length, falliti: failed } });
+  }
+
+  // Scarica i meme/foto allegati ai commenti e li incorpora come data URI.
+  // TV Time li serve da CloudFront (dominio diverso da tvtime.com) e l'URL
+  // diretto risponde 403 senza il referer di TV Time: per questo NON si possono
+  // riscaricare lato server, né aprendo il link a mano. Qui però giriamo DENTRO
+  // una pagina tvtime.com, quindi la fetch invia automaticamente il referer
+  // giusto e le immagini ancora vive si scaricano — esattamente come fa l'app
+  // quando mostra il meme. Le converto in data URI così finiscono nello ZIP e
+  // sopravvivono alla migrazione (le vecchissime già cancellate da TV Time
+  // restano irrecuperabili: vengono semplicemente saltate).
+  async function pullCommentImages(commentsData) {
+    const list = listOf(commentsData);
+    const urls = [];
+    for (const c of list) {
+      const u = c && c.image && c.image.url;
+      if (u && /^https?:\/\//i.test(u)) urls.push(u);
+    }
+    const uniq = [...new Set(urls)];
+    if (!uniq.length) return;
+    const map = {};
+    let i = 0;
+    async function worker() {
+      while (i < uniq.length) {
+        const url = uniq[i++];
+        try {
+          const res = await fetchTimeout(url, { credentials: "omit" }, 20000);
+          if (!res || !res.ok) continue;
+          const ct = (res.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+          if (!/^image\//.test(ct)) continue;
+          const blob = await res.blob();
+          if (!blob.size || blob.size > 3 * 1024 * 1024) continue;  // cap 3MB/immagine
+          const dataUri = await new Promise((resolve) => {
+            const fr = new FileReader();
+            fr.onload = () => resolve(String(fr.result || ""));
+            fr.onerror = () => resolve("");
+            fr.readAsDataURL(blob);
+          });
+          if (dataUri.startsWith("data:image/")) map[url] = dataUri;
+        } catch {}
+      }
+    }
+    await Promise.all(Array.from({ length: Math.min(4, uniq.length) }, worker));
+    if (Object.keys(map).length) {
+      relay("pullResult", { label: "commenti_immagini", status: 200, ok: true, data: map });
+    }
   }
 
   // Risolve tvdb_id/imdb_id dei film presenti solo nelle liste (mai seguiti).
