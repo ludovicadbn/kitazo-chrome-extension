@@ -180,7 +180,11 @@
       ["preferiti_film",  `${ms}/v2/lists/user/${uid}/lists/favorite-movies?expand=all`],
       ["preferiti_serie", `${ms}/v2/lists/user/${uid}/lists/favorite-series?expand=all`],
       ["liste",           `${ms}/v2/lists/user/${uid}?expand=meta`],
-      ["commenti",        `${cm}/cgw/user/${uid}/comments?sort=most_recent&ignore_replies=false&only_watched=false&expand=all`],
+      // ignore_replies=true: solo i commenti top-level (come il counter di TV
+      // Time). Le risposte ad altri commenti, migrate come commenti a sé sul
+      // titolo, perderebbero il thread a cui rispondevano — quindi le escludiamo
+      // alla fonte.
+      ["commenti",        `${cm}/cgw/user/${uid}/comments?sort=most_recent&ignore_replies=true&only_watched=false&expand=all`],
       // aggregati dei voti (personaggi + rating serie)
       ["voti_serie",      `${st}/${uid}/episode/voted`],
       ["voti_film",       `${st}/${uid}/movie/voted`],
