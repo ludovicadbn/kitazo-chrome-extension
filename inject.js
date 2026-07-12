@@ -359,8 +359,26 @@
       const serieObjs = listOf(results.follows_serie_all || results.follows_serie);
       const serieIds = serieObjs.map((o) => o.meta?.id).filter(Boolean);
 
+      // Also fetch the episode structure for series you WATCHED but no longer
+      // FOLLOW: unfollowed shows still count in TV Time's stats and are in the
+      // watch log, but aren't in the follows list — without their structure their
+      // watched episodes have nowhere to attach and silently vanish from the export.
+      const followedSet = new Set(serieIds.map(String));
+      const watchedOnlyIds = [];
+      const seenWatchedSid = new Set();
+      for (const w of listOf(results.visti_episodi)) {
+        const sid = w && (w.series_id != null ? w.series_id : w.show_id);
+        if (sid == null) continue;
+        const key = String(sid);
+        if (followedSet.has(key) || seenWatchedSid.has(key)) continue;
+        seenWatchedSid.add(key);
+        watchedOnlyIds.push(sid);
+      }
+      const allSerieIds = [...serieIds, ...watchedOnlyIds];
+      if (watchedOnlyIds.length) relay("pullNote", { note: `+${watchedOnlyIds.length} serie viste ma non seguite` });
+
       // Ora conosco il totale reale: pull base + film ciclati + serie ciclate.
-      relay("pullSetTotal", { total: targets.length + filmUuids.length + serieIds.length });
+      relay("pullSetTotal", { total: targets.length + filmUuids.length + allSerieIds.length });
 
       // aggregati (non contano come step: sono istantanei)
       emitSeriesAggregate(results.voti_serie);
@@ -369,8 +387,8 @@
         done = await pullVotes(uid, jwt, { filmUuids }, done);
       }
 
-      // === PASS 3: struttura stagioni/episodi per ogni serie ===
-      done = await pullSeriesStructure(jwt, serieIds, done);
+      // === PASS 3: struttura stagioni/episodi per ogni serie (seguite + viste) ===
+      done = await pullSeriesStructure(jwt, allSerieIds, done);
 
       // === PASS 4: risolvi il tvdb dei film presenti SOLO nelle liste ===
       // (film mai seguiti: il loro tvdb non è nei follows). Interrogo l'endpoint

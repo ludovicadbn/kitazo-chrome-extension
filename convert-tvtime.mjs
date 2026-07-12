@@ -182,6 +182,41 @@ const serie = serieSrc.map((s) => {
   return { ...base, seasons };
 });
 
+// Serie VISTE ma non seguite: hanno una struttura (sono nel watch log) ma nessun
+// follow object, quindi il map sopra le salta. Le ricostruisco così i loro
+// episodi visti non spariscono dall'export.
+{
+  const followedIds = new Set(serieSrc.map((s) => String(s.meta?.id)).filter(Boolean));
+  for (const p of pulls) {
+    const mm = /^struct_(\d+)$/.exec(p.label || "");
+    if (!mm || !p.ok || followedIds.has(mm[1])) continue;
+    const struct = structFor(mm[1]);
+    if (!struct) continue;
+    const bySeason = new Map();
+    let anyWatched = false;
+    for (const e of struct) {
+      const w = watchById.get(e.id);
+      if (w) anyWatched = true;
+      const sn = e.season ?? 0;
+      if (!bySeason.has(sn)) bySeason.set(sn, []);
+      bySeason.get(sn).push({
+        tvdb_id: e.id,
+        imdb_id: e.imdb_id || undefined,
+        number: e.number,
+        name: e.name,
+        special: e.is_special || undefined,
+        is_watched: Boolean(w),
+        watched_at: w ? cleanDate(w.watched_at) : undefined,
+        rewatch_count: w ? (w.rewatch_count || 0) : undefined,
+      });
+    }
+    if (!anyWatched) continue;
+    const seasons = [...bySeason.entries()].sort((a, b) => a[0] - b[0])
+      .map(([number, episodes]) => ({ number, episodes: episodes.sort((a, b) => (a.number || 0) - (b.number || 0)) }));
+    serie.push({ tvdb_id: Number(mm[1]) || mm[1], seasons });
+  }
+}
+
 // --- LISTE (preferiti + liste custom dell'utente) --------------------------
 // Ogni lista: nome, descrizione, visibilità, e items (con id per reidratare).
 function mapListItem(o) {

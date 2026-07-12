@@ -196,6 +196,32 @@
       return { ...base, episodi_totali: epTotali, episodi_visti: epVisti, seasons };
     });
 
+    // Watched-but-unfollowed series: a structure was fetched for them (they're in
+    // the watch log) but there's no follow object, so the map above skipped them.
+    // Synthesize an entry from the struct + watch log so their episodes aren't lost.
+    const followedIds = new Set(serieSrc.map((s) => String(s.meta?.id)).filter(Boolean));
+    for (const p of pulls) {
+      const mm = /^struct_(\d+)$/.exec(p.label || "");
+      if (!mm || !p.ok || followedIds.has(mm[1])) continue;
+      const struct = structFor(mm[1]);
+      if (!struct) continue;
+      const bySeason = new Map();
+      let epTotali = 0, epVisti = 0;
+      for (const e of struct) {
+        epTotali++;
+        const w = watchById.get(e.id);
+        if (!w) continue;
+        epVisti++;
+        const sn = e.season ?? 0;
+        if (!bySeason.has(sn)) bySeason.set(sn, []);
+        bySeason.get(sn).push({ tvdb_id: e.id, imdb_id: e.imdb_id || undefined, number: e.number, name: e.name, special: e.is_special || undefined, watched_at: cleanDate(w.watched_at), rewatch_count: w.rewatch_count || 0 });
+      }
+      if (!epVisti) continue;
+      const seasons = [...bySeason.entries()].sort((a, b) => a[0] - b[0])
+        .map(([number, episodes]) => ({ number, episodes: episodes.sort((a, b) => (a.number || 0) - (b.number || 0)) }));
+      serie.push({ tvdb_id: Number(mm[1]) || mm[1], episodi_totali: epTotali, episodi_visti: epVisti, seasons });
+    }
+
     // LISTE
     const mapListItem = (o) => {
       if (o.type === "movie") {
