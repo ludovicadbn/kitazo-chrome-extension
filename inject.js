@@ -443,8 +443,18 @@
   async function pullSeriesStructure(jwt, serieIds, done) {
     const ms = "https://msapi.tvtime.com/v1/series";
     for (const sid of serieIds) {
-      const raw = await fetchQuiet(`${ms}/${sid}/episodes`, jwt);
-      const eps = unwrap(raw);
+      // Retry a failed/empty episode-structure fetch: a single transient timeout
+      // or rate-limit here used to drop the ENTIRE series' watched episodes (the
+      // watch log can only be placed via this structure), quietly shrinking the
+      // export. Up to 3 tries with backoff before giving up on this series.
+      let eps = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const raw = await fetchQuiet(`${ms}/${sid}/episodes`, jwt);
+        const parsed = unwrap(raw);
+        const arr = Array.isArray(parsed) ? parsed : (parsed && Array.isArray(parsed.episodes) ? parsed.episodes : null);
+        if (arr && arr.length) { eps = arr; break; }
+        await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+      }
       if (Array.isArray(eps) && eps.length) {
         const lean = eps.map((e) => ({
           id: e.id,
