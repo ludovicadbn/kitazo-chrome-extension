@@ -188,6 +188,10 @@
       // aggregati dei voti (personaggi + rating serie)
       ["voti_serie",      `${st}/${uid}/episode/voted`],
       ["voti_film",       `${st}/${uid}/movie/voted`],
+      // copertine/fanart personalizzate scelte dall'utente su TV Time: le
+      // reimportiamo come poster/banner scelti in Kitazo. Endpoint per-utente
+      // (auth via bearer/cookie), non serve l'uid nel path.
+      ["copertine",       `https://users-customization.tvtime.com/v1/customization/images`],
     ];
   }
 

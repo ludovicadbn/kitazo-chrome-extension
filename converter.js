@@ -451,6 +451,18 @@
     const rating = collectRatings();
     const pers = collectCharacterVotes();
 
+    // COPERTINE/FANART personalizzate: le immagini che l'utente ha scelto a mano
+    // su TV Time (poster + fanart per serie/film). Le reimportiamo come
+    // poster/banner scelti in Kitazo. Chiave = tvdb id, tipo = series/movie.
+    const copertine = okList("copertine").map((o) => {
+      const poster = o.poster && typeof o.poster === "object" ? o.poster.url : undefined;
+      const fanart = o.fanart && typeof o.fanart === "object" ? o.fanart.url : undefined;
+      const tvdb_id = o.entity_id ?? o.tvdb_id ?? o.id;
+      const type = o.entity_type === "movie" ? "movie" : "series";
+      if (tvdb_id == null || (!poster && !fanart)) return null;
+      return { type, tvdb_id, poster_url: poster || undefined, fanart_url: fanart || undefined };
+    }).filter(Boolean);
+
     const meta = { exportedAt: raw.exportedAt, source: "TV Time", consent: raw.consent || undefined };
     const serieOut = {
       ...meta, serie,
@@ -462,7 +474,7 @@
       rating_film: rating.filter((r) => r.tipo === "movie"),
       personaggi_votati: pers.filter((p) => p.tipo === "movie"),
     };
-    const listeOut = { ...meta, liste, commenti };
+    const listeOut = { ...meta, liste, commenti, copertine };
 
     return { serieOut, filmOut, listeOut };
   }

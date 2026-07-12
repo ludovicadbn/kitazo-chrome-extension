@@ -357,6 +357,17 @@ const ratingSerie = rating_titoli.filter((r) => r.tipo === "episode" || r.tipo =
 const persFilm = personaggi_votati_dettaglio.filter((p) => p.tipo === "movie");
 const persSerie = personaggi_votati_dettaglio.filter((p) => p.tipo === "series");
 
+// Copertine/fanart personalizzate scelte dall'utente su TV Time → reimportate
+// come poster/banner scelti in Kitazo (chiave = tvdb id, tipo = series/movie).
+const copertine = okList("copertine").map((o) => {
+  const poster = o.poster && typeof o.poster === "object" ? o.poster.url : undefined;
+  const fanart = o.fanart && typeof o.fanart === "object" ? o.fanart.url : undefined;
+  const tvdb_id = o.entity_id ?? o.tvdb_id ?? o.id;
+  const type = o.entity_type === "movie" ? "movie" : "series";
+  if (tvdb_id == null || (!poster && !fanart)) return null;
+  return { type, tvdb_id, poster_url: poster || undefined, fanart_url: fanart || undefined };
+}).filter(Boolean);
+
 const serieOut = {
   ...meta,
   serie,                       // serie -> stagioni -> episodi (con watch)
@@ -375,6 +386,7 @@ const listeOut = {
   ...meta,
   liste,                       // preferiti + custom
   commenti,
+  copertine,                   // poster/fanart personalizzati
 };
 
 // Impacchetta i 3 JSON in un unico zip.
