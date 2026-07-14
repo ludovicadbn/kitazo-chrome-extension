@@ -92,8 +92,8 @@
   ].join(';'));
   var card = document.createElement('div');
   card.setAttribute('style', [
-    'width:100%', 'max-width:400px', 'background:#1a1426', 'border:1px solid #2e2440',
-    'border-radius:18px', 'padding:22px', 'color:#ECE7F0', 'text-align:center',
+    'width:100%', 'max-width:400px', 'background:rgb(26,20,38)', 'border:1px solid rgb(46,36,64)',
+    'border-radius:18px', 'padding:22px', 'color:rgb(236,231,240)', 'text-align:center',
     'box-shadow:0 20px 60px rgba(0,0,0,0.5)',
   ].join(';'));
   root.appendChild(card);
@@ -103,7 +103,7 @@
   function btn(label, primary) {
     return '<button data-k="1" style="width:100%;margin-top:10px;padding:13px;border-radius:12px;border:0;' +
       'font-size:15px;font-weight:800;cursor:pointer;' +
-      (primary ? 'background:#8B5CF6;color:#fff' : 'background:#241b34;color:#ECE7F0;border:1px solid #3a2f4d') +
+      (primary ? 'background:rgb(139,92,246);color:rgb(255,255,255)' : 'background:rgb(36,27,52);color:rgb(236,231,240);border:1px solid rgb(58,47,77)') +
       '">' + esc(label) + '</button>';
   }
   function cleanup() { try { root.remove(); } catch (e) {} window.__kitazoMobileRunning = false; }
@@ -126,14 +126,14 @@
     h(
       '<div style="font-size:26px;margin-bottom:6px">📺</div>' +
       '<div style="font-size:17px;font-weight:800;margin-bottom:4px">Kitazo</div>' +
-      '<div style="font-size:13px;color:#B9A8D6;margin-bottom:12px">' + esc(T.scanning) + '</div>' +
-      '<div style="font-size:30px;font-weight:900;color:#ECE7F0;margin-bottom:10px">' + Math.round(p) + '%</div>' +
-      '<div style="height:8px;background:#241b34;border-radius:6px;overflow:hidden">' +
-      '<div style="height:100%;width:' + p + '%;background:#8B5CF6;transition:width .3s"></div></div>' +
-      '<div style="font-size:12px;color:#6f6483;margin-top:10px">' + esc(note || etaText()) + '</div>' +
+      '<div style="font-size:13px;color:rgb(185,168,214);margin-bottom:12px">' + esc(T.scanning) + '</div>' +
+      '<div style="font-size:30px;font-weight:900;color:rgb(236,231,240);margin-bottom:10px">' + Math.round(p) + '%</div>' +
+      '<div style="height:8px;background:rgb(36,27,52);border-radius:6px;overflow:hidden">' +
+      '<div style="height:100%;width:' + p + '%;background:rgb(139,92,246);transition:width .3s"></div></div>' +
+      '<div style="font-size:12px;color:rgb(111,100,131);margin-top:10px">' + esc(note || etaText()) + '</div>' +
       '<div id="k-stop">' + btn(T.stop) + '</div>'
     );
-    var s = card.querySelector('#k-stop button');
+    var s = card.querySelector('[id=k-stop] button');
     if (s) s.onclick = doAbort;
   }
 
@@ -152,17 +152,17 @@
     h(
       '<div style="font-size:26px;margin-bottom:6px">📺</div>' +
       '<div style="font-size:18px;font-weight:800;margin-bottom:4px">Kitazo</div>' +
-      '<div style="font-size:13px;color:#B9A8D6;margin-bottom:16px">' + esc(T.chooseHeading) + '</div>' +
-      '<label style="display:flex;align-items:flex-start;gap:10px;text-align:left;background:#241b34;' +
-        'border:1px solid #3a2f4d;border-radius:12px;padding:12px;cursor:pointer">' +
-        '<input id="k-chars" type="checkbox" checked style="width:20px;height:20px;margin-top:1px;accent-color:#8B5CF6;flex:0 0 auto">' +
-        '<span><span style="font-size:14px;font-weight:700;color:#ECE7F0">' + esc(T.inclChars) + '</span>' +
-        '<span style="display:block;font-size:12px;color:#9a8fb0;margin-top:4px;line-height:1.45">' + esc(T.charsNote) + '</span></span>' +
+      '<div style="font-size:13px;color:rgb(185,168,214);margin-bottom:16px">' + esc(T.chooseHeading) + '</div>' +
+      '<label style="display:flex;align-items:flex-start;gap:10px;text-align:left;background:rgb(36,27,52);' +
+        'border:1px solid rgb(58,47,77);border-radius:12px;padding:12px;cursor:pointer">' +
+        '<input id="k-chars" type="checkbox" checked style="width:20px;height:20px;margin-top:1px;accent-color:rgb(139,92,246);flex:0 0 auto">' +
+        '<span><span style="font-size:14px;font-weight:700;color:rgb(236,231,240)">' + esc(T.inclChars) + '</span>' +
+        '<span style="display:block;font-size:12px;color:rgb(154,143,176);margin-top:4px;line-height:1.45">' + esc(T.charsNote) + '</span></span>' +
       '</label>' +
       '<div id="k-go">' + btn(T.startBtn, true) + '</div>'
     );
-    card.querySelector('#k-go button').onclick = function () {
-      var deep = card.querySelector('#k-chars').checked;
+    card.querySelector('[id=k-go] button').onclick = function () {
+      var deep = card.querySelector('[id=k-chars]').checked;
       begin(deep);
     };
   }
@@ -229,7 +229,7 @@
   }
 
   function showError(msg) {
-    h('<div style="font-size:26px">⚠️</div><div style="font-size:15px;margin:10px 0;color:#ECE7F0">' + esc(msg) + '</div>' + btn(T.close));
+    h('<div style="font-size:26px">⚠️</div><div style="font-size:15px;margin:10px 0;color:rgb(236,231,240)">' + esc(msg) + '</div>' + btn(T.close));
     card.querySelector('button').onclick = cleanup;
   }
 
@@ -244,12 +244,12 @@
       '<div style="font-size:30px;margin-bottom:6px">✅</div>' +
       '<div style="font-size:18px;font-weight:800">' + esc(T.done) + '</div>' +
       '<div id="k-send" style="margin-top:14px">' + btn(T.send, true) + '</div>' +
-      '<div id="k-msg" style="font-size:12px;color:#6f6483;margin-top:12px"></div>' +
+      '<div id="k-msg" style="font-size:12px;color:rgb(111,100,131);margin-top:12px"></div>' +
       '<div id="k-close" style="margin-top:6px">' + btn(T.close) + '</div>'
     );
-    var msg = card.querySelector('#k-msg');
-    card.querySelector('#k-close button').onclick = cleanup;
-    card.querySelector('#k-send button').onclick = doSend;
+    var msg = card.querySelector('[id=k-msg]');
+    card.querySelector('[id=k-close] button').onclick = cleanup;
+    card.querySelector('[id=k-send] button').onclick = doSend;
     function setMsg(s) { msg.textContent = s; }
 
     // Build the archive once and keep it, so a retry (e.g. after a flaky network)
@@ -264,32 +264,35 @@
           var blob = await window.TVTimeConverter.buildZipBlob(buildRaw());
           cachedB64 = await blobToBase64(blob);
         }
-        setMsg(T.sending);
-        var res = await fetch(API_BASE + '/api/handoff', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token: UPLOAD_TOKEN, zipBase64: cachedB64 }),
-        });
-        if (!res.ok) {
-          // Map the server's status to an actionable message instead of one
-          // generic "send failed". 401 = token gone (needs a fresh bookmarklet),
-          // 413 = archive over the cap, anything else = surface the status.
-          if (res.status === 401) { setMsg(T.sendErr); return; }
-          if (res.status === 413) { setMsg(T.tooLarge); return; }
-          var body = '';
-          try { body = (await res.json()).error || ''; } catch (e) {}
-          setMsg('HTTP ' + res.status + (body ? ' — ' + body : ''));
-          return;
-        }
-        setMsg(T.opening);
-        // Straight to Kitazo (app if installed, else the site). The import page
-        // sees the parked archive on the account and runs it in the background.
-        window.location.href = API_BASE + '/import?imported=1';
       } catch (e) {
-        // fetch() itself threw → connectivity/preflight problem, not the server.
         setMsg(T.netErr);
+        return;
       }
+      setMsg(T.opening);
+      // Send by SUBMITTING A FORM, not fetch/XHR. TV Time's CSP `connect-src`
+      // blocks fetch to the Kitazo API (iOS Safari enforces it strictly), but a
+      // form submission is a top-level NAVIGATION governed by `form-action`
+      // (which TV Time doesn't restrict). The server parks the archive and
+      // redirects us straight to Kitazo — app if installed, else the website —
+      // where the import runs in the background. No file, no manual step.
+      var f = document.createElement('form');
+      f.method = 'POST';
+      f.action = API_BASE + '/api/handoff/form';
+      f.acceptCharset = 'utf-8';
+      f.style.display = 'none';
+      f.appendChild(hidden('token', UPLOAD_TOKEN));
+      f.appendChild(hidden('zipBase64', cachedB64));
+      document.body.appendChild(f);
+      f.submit();
     }
+  }
+
+  function hidden(name, value) {
+    var i = document.createElement('input');
+    i.type = 'hidden';
+    i.name = name;
+    i.value = value;
+    return i;
   }
 
   function blobToBase64(blob) {
