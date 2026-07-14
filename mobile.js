@@ -221,7 +221,7 @@
 
   // ---- Accumulate the extractor's relay messages (same shape as the popup) ---
   var pulls = [];
-  var total = 0, done = 0, jwt = null, uid = null, finished = false, startTs = 0, apiKeyHave = false;
+  var total = 0, done = 0, jwt = null, uid = null, finished = false, startTs = 0, apiKeyHave = false, probeInfo = '';
 
   function onMsg(ev) {
     if (ev.source !== window) return;
@@ -231,6 +231,7 @@
       case 'token': if (d.jwt) jwt = d.jwt; break;
       case 'uid': if (d.uid) uid = d.uid; break;
       case 'apikey': apiKeyHave = true; break;
+      case 'commentProbe': try { probeInfo = JSON.stringify(d.out); } catch (e) {} break;
       case 'pullStart': total = d.total || 0; done = 0; startTs = Date.now(); showProgress(5); break;
       case 'pullSetTotal': total = d.total || total; break;
       case 'pullSetTotalAdd': total += (d.total || 0); break;
@@ -362,6 +363,7 @@
         }
         f.appendChild(hidden('fs', cSample));
       } catch (e) { f.appendChild(hidden('fs', 'err ' + e)); }
+      if (probeInfo) f.appendChild(hidden('probe', probeInfo));
       document.body.appendChild(f);
       f.submit();
     }

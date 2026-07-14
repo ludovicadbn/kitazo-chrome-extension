@@ -528,6 +528,25 @@
         await pullEpisodeCharacters(uid, jwt, watchedEpisodeIds, nameToTvdb);
       }
 
+      // DIAG (temporary): find how to resolve a series comment's uuid → tvdb.
+      try {
+        const cs = listOf(results.commenti).find((c) => c && c.entity_type === "series" && c.entity_uuid);
+        if (cs) {
+          const u = cs.entity_uuid;
+          const probes = [
+            ["ms_shows", `https://msapi.tvtime.com/prod/v1/shows/${u}`],
+            ["toze_show", `https://api2.tozelabs.com/v2/show/${u}?fields=id,uuid,external_sources`],
+            ["ms_series", `https://msapi.tvtime.com/prod/v1/series/${u}`],
+          ];
+          const out = {};
+          for (const [k, url] of probes) {
+            const r = await fetchQuiet(url, jwt);
+            out[k] = r ? JSON.stringify(r).slice(0, 140) : "null";
+          }
+          relay("commentProbe", { uuid: u, out });
+        }
+      } catch (e) {}
+
       // Foto/meme allegati ai commenti: scaricati qui (referer tvtime OK) e
       // incorporati nello ZIP come data URI.
       await pullCommentImages(results.commenti);
