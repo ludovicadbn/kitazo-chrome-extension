@@ -228,45 +228,64 @@
   }
 
   async function pullOne(label, target, jwt) {
-    // Retry transient failures. The /v1/tracking endpoints (watched episodes,
-    // follows) are heavy and the sidecar occasionally 502s them under load; a
-    // single miss here used to drop the ENTIRE watched library. Retry 5xx / 429
-    // / network errors up to 4 attempts with backoff; relay only the final result.
-    let last = { status: 0, ok: false, data: null, error: "no attempt" };
-    for (let attempt = 0; attempt < 4; attempt++) {
-      try {
-        const res = await fetchTimeout(sidecarUrl(target), {
-          method: "GET",
-          headers: authHeaders(jwt),
-          credentials: "include",
-        });
-        const text = await res.text();
-        let data = null;
-        try { data = JSON.parse(text); } catch {}
-        last = { status: res.status, ok: res.ok, data, error: null, body: res.ok ? undefined : text.slice(0, 160) };
-        // Success, or a non-retryable client error (4xx except 429) → stop.
-        if (res.ok || (res.status < 500 && res.status !== 429)) break;
-      } catch (e) {
-        last = { status: 0, ok: false, data: null, error: String(e) };
+    // Two ways to reach the API from inside the page:
+    //   1. the /sidecar proxy — same-origin, cookie-authenticated (the default).
+    //   2. a DIRECT call to the real endpoint with the Bearer token — the way the
+    //      TV Time app itself calls it; CORS allows it from app.tvtime.com.
+    // The sidecar reliably 502s (nginx Bad Gateway) on the heavy /v1/tracking
+    // endpoints (watched episodes + follows) when driven from a bookmarklet, so
+    // those came back empty. When the sidecar 5xx's we fall back to the direct
+    // call, which needs the Bearer token — so only add it when we have a jwt.
+    const routes = [{ url: sidecarUrl(target), credentials: "include" }];
+    if (jwt) routes.push({ url: target, credentials: "omit" });
+
+    let last = { status: 0, ok: false, data: null, error: "no attempt", body: undefined };
+    for (const route of routes) {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const res = await fetchTimeout(route.url, {
+            method: "GET",
+            headers: authHeaders(jwt),
+            credentials: route.credentials,
+          });
+          const text = await res.text();
+          let data = null;
+          try { data = JSON.parse(text); } catch {}
+          last = { status: res.status, ok: res.ok, data, error: null, body: res.ok ? undefined : text.slice(0, 160) };
+          if (res.ok || (res.status < 500 && res.status !== 429)) break;
+        } catch (e) {
+          last = { status: 0, ok: false, data: null, error: String(e) };
+        }
+        if (attempt < 2) await new Promise((r) => setTimeout(r, 600 * (attempt + 1)));
       }
-      if (attempt < 3) await new Promise((r) => setTimeout(r, 700 * (attempt + 1)));
+      if (last.ok) break; // this route worked — don't try the next
     }
     relay("pullResult", { label, target, status: last.status, ok: last.ok, data: last.data, error: last.error || undefined, body: last.body });
     return { ok: last.ok, data: last.data };
   }
 
-  // Fetch "silenzioso": non emette pullResult (usato dentro il pass 2 per
-  // risolvere nomi personaggi senza intasare la lista risultati).
+  // Fetch "silenzioso": non emette pullResult (usato per struttura episodi e
+  // per risolvere nomi personaggi). Stessa strategia di pullOne: sidecar, e in
+  // caso di 5xx fallback alla chiamata diretta col Bearer.
   async function fetchQuiet(target, jwt) {
-    try {
-      const res = await fetchTimeout(sidecarUrl(target), {
-        method: "GET",
-        headers: authHeaders(jwt),
-        credentials: "include",
-      });
-      const text = await res.text();
-      try { return JSON.parse(text); } catch { return null; }
-    } catch { return null; }
+    const routes = [{ url: sidecarUrl(target), credentials: "include" }];
+    if (jwt) routes.push({ url: target, credentials: "omit" });
+    for (const route of routes) {
+      try {
+        const res = await fetchTimeout(route.url, {
+          method: "GET",
+          headers: authHeaders(jwt),
+          credentials: route.credentials,
+        });
+        const text = await res.text();
+        if (res.ok) {
+          try { return JSON.parse(text); } catch { return null; }
+        }
+        // non-5xx failure (e.g. 404) → don't bother with the direct route
+        if (res.status < 500 && res.status !== 429) return null;
+      } catch (e) { /* try next route */ }
+    }
+    return null;
   }
 
   const unwrap = (d) => (d && d.data !== undefined ? d.data : d);
