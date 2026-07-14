@@ -95,12 +95,22 @@
   // Capture it from the app's own live requests so our DIRECT fallback (when the
   // sidecar 502s) can send it too.
   let apiKey = null; // { name, value }
+  // (A) Reuse a previously captured key. It's a static app key, so once we've
+  // caught it on this device we read it back instantly on later runs instead of
+  // racing to capture it again — timing stops mattering after the first success.
+  try {
+    const _ak = localStorage.getItem("__kitazo_ak");
+    if (_ak) { apiKey = JSON.parse(_ak); window.__kitazoHasApiKey = true; }
+  } catch (e) {}
   function grabApiKey(name, value) {
     if (apiKey) return;
     if (typeof name !== "string" || typeof value !== "string") return;
     if (/api[-_]?key/i.test(name) && value.length >= 8) {
       apiKey = { name, value };
-      relay("apikey", { have: true, name });
+      try { localStorage.setItem("__kitazo_ak", JSON.stringify(apiKey)); } catch (e) {}
+      try { window.__kitazoHasApiKey = true; } catch (e) {}
+      // value included so it can be shown once for hard-coding (B).
+      relay("apikey", { have: true, name, value });
     }
   }
   function sniffApiKey(headers) {

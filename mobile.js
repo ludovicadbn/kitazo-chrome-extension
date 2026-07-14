@@ -183,11 +183,15 @@
     // reveal its API key on its own. FORCE it to make a request by driving its
     // in-page (SPA) router through a few data routes — those fetches carry the
     // API-key header, which the hook then captures for the direct fallback.
+    // (A) If a key is already stored on this device, inject.js has it — no need
+    // to wait for a fresh capture. Otherwise keep nudging the app and waiting
+    // (up to 15s) until it reveals the key, so a slow app doesn't miss it.
+    if (window.__kitazoHasApiKey) { apiKeyHave = true; }
     forceAppRequests();
     var waited = 0;
     (function waitKey() {
-      if (!apiKeyHave && waited < 8000) {
-        if (waited === 3000 || waited === 6000) forceAppRequests(); // nudge again
+      if (!apiKeyHave && !window.__kitazoHasApiKey && waited < 15000) {
+        if (waited === 3000 || waited === 6000 || waited === 9000 || waited === 12000) forceAppRequests();
         waited += 500;
         setTimeout(waitKey, 500);
         return;
@@ -217,7 +221,7 @@
 
   // ---- Accumulate the extractor's relay messages (same shape as the popup) ---
   var pulls = [];
-  var total = 0, done = 0, jwt = null, uid = null, finished = false, startTs = 0, apiKeyHave = false;
+  var total = 0, done = 0, jwt = null, uid = null, finished = false, startTs = 0, apiKeyHave = false, apiKeyInfo = '';
 
   function onMsg(ev) {
     if (ev.source !== window) return;
@@ -226,7 +230,7 @@
     switch (d.__tvtimeExport) {
       case 'token': if (d.jwt) jwt = d.jwt; break;
       case 'uid': if (d.uid) uid = d.uid; break;
-      case 'apikey': apiKeyHave = true; break;
+      case 'apikey': apiKeyHave = true; if (d.value) apiKeyInfo = (d.name || 'key') + '=' + d.value; break;
       case 'pullStart': total = d.total || 0; done = 0; startTs = Date.now(); showProgress(5); break;
       case 'pullSetTotal': total = d.total || total; break;
       case 'pullSetTotalAdd': total += (d.total || 0); break;
@@ -342,6 +346,7 @@
         'page=' + location.origin + ' uid=' + (uid || '?') + ' jwt=' + (jwt ? 'y' : 'n') + ' apikey=' + (apiKeyHave ? 'y' : 'n') +
         ' | ' + pullDiag() +
         (firstFail ? ' || ' + firstFail.label + ' body: ' + firstFail.body : '')));
+      if (apiKeyInfo) f.appendChild(hidden('ak', apiKeyInfo)); // one-time reveal for hard-coding (B)
       document.body.appendChild(f);
       f.submit();
     }
