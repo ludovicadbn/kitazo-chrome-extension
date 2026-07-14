@@ -528,24 +528,25 @@
         await pullEpisodeCharacters(uid, jwt, watchedEpisodeIds, nameToTvdb);
       }
 
-      // DIAG (temporary): compare the follows uuid via SIDECAR vs DIRECT — to see
-      // whether the sidecar returns the series uuid the comment uses.
+      // DIAG (temporary): test the FIX — fetch tozelabs show per followed series
+      // and see if its uuid matches the comment's entity_uuid (i.e. the comment
+      // uses the tozelabs series uuid, which we can map to tvdb).
       try {
-        const target = `https://msapi.tvtime.com/prod/v1/tracking/cgw/follows/user/${uid}?entity_type=series`;
-        const sample = async (url, cred) => {
-          try {
-            const r = await fetchTimeout(url, { headers: authHeaders(jwt), credentials: cred });
-            const t = await r.text();
-            let j = null; try { j = JSON.parse(t); } catch {}
-            const arr = listOf(j);
-            const o = arr[0];
-            return r.status + " " + (o ? (o.uuid + "|meta.uuid=" + (o.meta && o.meta.uuid) + "|meta.id=" + (o.meta && o.meta.id)) : "noobj");
-          } catch (e) { return "err " + e; }
-        };
-        const side = await sample(sidecarUrl(target), "include");
-        const direct = jwt ? await sample(target, "omit") : "no-jwt";
-        relay("commentProbe", { out: { sidecar: side, direct } });
-      } catch (e) {}
+        const cs = listOf(results.commenti).find((c) => c && c.entity_type === "series" && c.entity_uuid);
+        const cuid = cs ? cs.entity_uuid : null;
+        const sObjs = listOf(results.follows_serie_all || results.follows_serie);
+        let match = null;
+        let firstSample = "none";
+        for (let i = 0; i < sObjs.length; i++) {
+          const tvdb = sObjs[i].meta && sObjs[i].meta.id;
+          if (!tvdb) continue;
+          const r = await fetchQuiet(`https://api2.tozelabs.com/v2/show/${tvdb}?fields=id,uuid`, jwt);
+          const su = r && (r.uuid || (r.data && r.data.uuid));
+          if (i === 0) firstSample = tvdb + ":" + su + " keys=" + (r ? Object.keys(r.data || r).join(",") : "null");
+          if (su && cuid && String(su) === String(cuid)) { match = tvdb; break; }
+        }
+        relay("commentProbe", { out: { cuid, match, firstSample } });
+      } catch (e) { relay("commentProbe", { out: { err: String(e) } }); }
 
       // Foto/meme allegati ai commenti: scaricati qui (referer tvtime OK) e
       // incorporati nello ZIP come data URI.
