@@ -204,9 +204,49 @@
     });
   }
 
-  // ---- Kick off: give inject.js a moment to capture uid/token from the SPA's
-  // ambient API traffic, then start the same pull the popup triggers. ----------
+  // ---- Find the TV Time user id + token WITHOUT relying on captured network
+  // traffic. The desktop extension hooks fetch at document_start and reads the id
+  // from API calls; a bookmarklet loads AFTER those calls, so it must dig the id
+  // out of the page itself: the URL, or (mainly) the JWT that TV Time stores in
+  // localStorage/sessionStorage/cookies — its payload carries the numeric user id.
+  function b64urlDecode(s) {
+    try { return atob(s.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(s.length / 4) * 4, '=')); } catch (e) { return ''; }
+  }
+  function uidFromJwt(tk) {
+    try {
+      var p = JSON.parse(b64urlDecode(tk.split('.')[1]));
+      var cand = [p.sub, p.user_id, p.userId, p.uid, p.id, p.user && p.user.id, p.data && p.data.id];
+      for (var i = 0; i < cand.length; i++) {
+        if (cand[i] != null && /^\d{3,}$/.test(String(cand[i]))) return { uid: String(cand[i]), jwt: tk };
+      }
+    } catch (e) {}
+    return null;
+  }
+  function findIdentity() {
+    // 1) URL (some TV Time routes carry it).
+    var m = /\/user[s]?\/(\d{3,})/.exec(location.href);
+    if (m) return { uid: m[1], jwt: null };
+    // 2) Any JWT stored on the page → decode its user id.
+    var blobs = [];
+    try { for (var i = 0; i < localStorage.length; i++) blobs.push(localStorage.getItem(localStorage.key(i))); } catch (e) {}
+    try { for (var j = 0; j < sessionStorage.length; j++) blobs.push(sessionStorage.getItem(sessionStorage.key(j))); } catch (e) {}
+    try { blobs.push(document.cookie); } catch (e) {}
+    for (var k = 0; k < blobs.length; k++) {
+      var jwts = String(blobs[k] || '').match(/eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g);
+      if (!jwts) continue;
+      for (var n = 0; n < jwts.length; n++) { var r = uidFromJwt(jwts[n]); if (r) return r; }
+    }
+    return { uid: null, jwt: null };
+  }
+
+  // ---- Kick off: give inject.js a moment (its hook may still catch ambient
+  // traffic), then resolve the identity from the page and start the pull. --------
   setTimeout(function () {
+    if (!uid || !jwt) {
+      var found = findIdentity();
+      if (!uid) uid = found.uid;
+      if (!jwt) jwt = found.jwt;
+    }
     window.postMessage({ __tvtimeExport: 'startPull', jwt: jwt, uid: uid, deepVotes: true }, '*');
   }, 2500);
 })();
