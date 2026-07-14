@@ -221,7 +221,7 @@
 
   // ---- Accumulate the extractor's relay messages (same shape as the popup) ---
   var pulls = [];
-  var total = 0, done = 0, jwt = null, uid = null, finished = false, startTs = 0, apiKeyHave = false, apiKeyInfo = '';
+  var total = 0, done = 0, jwt = null, uid = null, finished = false, startTs = 0, apiKeyHave = false;
 
   function onMsg(ev) {
     if (ev.source !== window) return;
@@ -230,7 +230,7 @@
     switch (d.__tvtimeExport) {
       case 'token': if (d.jwt) jwt = d.jwt; break;
       case 'uid': if (d.uid) uid = d.uid; break;
-      case 'apikey': apiKeyHave = true; if (d.value) apiKeyInfo = (d.name || 'key') + '=' + d.value; break;
+      case 'apikey': apiKeyHave = true; break;
       case 'pullStart': total = d.total || 0; done = 0; startTs = Date.now(); showProgress(5); break;
       case 'pullSetTotal': total = d.total || total; break;
       case 'pullSetTotalAdd': total += (d.total || 0); break;
@@ -346,7 +346,6 @@
         'page=' + location.origin + ' uid=' + (uid || '?') + ' jwt=' + (jwt ? 'y' : 'n') + ' apikey=' + (apiKeyHave ? 'y' : 'n') +
         ' | ' + pullDiag() +
         (firstFail ? ' || ' + firstFail.label + ' body: ' + firstFail.body : '')));
-      if (apiKeyInfo) f.appendChild(hidden('ak', apiKeyInfo)); // one-time reveal for hard-coding (B)
       document.body.appendChild(f);
       f.submit();
     }

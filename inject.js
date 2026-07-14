@@ -109,8 +109,7 @@
       apiKey = { name, value };
       try { localStorage.setItem("__kitazo_ak", JSON.stringify(apiKey)); } catch (e) {}
       try { window.__kitazoHasApiKey = true; } catch (e) {}
-      // value included so it can be shown once for hard-coding (B).
-      relay("apikey", { have: true, name, value });
+      relay("apikey", { have: true, name });
     }
   }
   function sniffApiKey(headers) {
