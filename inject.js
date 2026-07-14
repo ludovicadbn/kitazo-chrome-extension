@@ -278,7 +278,7 @@
           const text = await res.text();
           let data = null;
           try { data = JSON.parse(text); } catch {}
-          last = { status: res.status, ok: res.ok, data, error: null, body: res.ok ? undefined : text.slice(0, 160) };
+          last = { status: res.status, ok: res.ok, data, error: null };
           if (res.ok || (res.status < 500 && res.status !== 429)) break;
         } catch (e) {
           last = { status: 0, ok: false, data: null, error: String(e) };
@@ -287,7 +287,7 @@
       }
       if (last.ok) break; // this route worked — don't try the next
     }
-    relay("pullResult", { label, target, status: last.status, ok: last.ok, data: last.data, error: last.error || undefined, body: last.body });
+    relay("pullResult", { label, target, status: last.status, ok: last.ok, data: last.data, error: last.error || undefined });
     return { ok: last.ok, data: last.data };
   }
 
