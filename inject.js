@@ -534,14 +534,19 @@
       try {
         const cs = listOf(results.commenti).find((c) => c && c.entity_type === "series" && c.entity_uuid);
         const cuid = cs ? cs.entity_uuid : null;
-        const sObjs = listOf(results.follows_serie_all || results.follows_serie);
-        const tvdb0 = sObjs[0] && sObjs[0].meta && sObjs[0].meta.id;
-        const trim = (x) => (x ? JSON.stringify(x).slice(0, 220) : "null");
-        // (a) tozelabs show by the COMMENT's uuid → does it carry the tvdb?
-        const byUuid = cuid ? await fetchQuiet(`https://api2.tozelabs.com/v2/show/${cuid}?fields=id,uuid,name,external_sources`, jwt) : null;
-        // (b) tozelabs show by a follow's tvdb, no restrictive fields → its uuid?
-        const byTvdb = tvdb0 ? await fetchQuiet(`https://api2.tozelabs.com/v2/show/${tvdb0}?fields=id,uuid,name,external_sources`, jwt) : null;
-        relay("commentProbe", { out: { cuid, tvdb0, byUuid: trim(byUuid), byTvdb: trim(byTvdb) } });
+        const trim = (x) => (x ? JSON.stringify(x).slice(0, 200) : "null");
+        // Try to get the comment's SERIES NAME from the comments service — then we
+        // match name→tvdb via the follows map the converter already builds.
+        const p1 = await fetchQuiet(`https://comments.tvtime.com/v1/comments/cgw/user/${uid}/comments?sort=most_recent&only_watched=false&expand=entity`, jwt);
+        const c1 = listOf(p1)[0];
+        const p2 = cuid ? await fetchQuiet(`https://comments.tvtime.com/v1/comments/cgw/entity/${cuid}?expand=all`, jwt) : null;
+        relay("commentProbe", {
+          out: {
+            cuid,
+            expandEntity: c1 ? ("entity=" + trim(c1.entity) + " keys=" + Object.keys(c1).join(",")) : "null",
+            entityEndpoint: trim(p2),
+          },
+        });
       } catch (e) { relay("commentProbe", { out: { err: String(e) } }); }
 
       // Foto/meme allegati ai commenti: scaricati qui (referer tvtime OK) e
