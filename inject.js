@@ -287,7 +287,7 @@
           const text = await res.text();
           let data = null;
           try { data = JSON.parse(text); } catch {}
-          last = { status: res.status, ok: res.ok, data, error: null, body: res.ok ? undefined : text.slice(0, 160) };
+          last = { status: res.status, ok: res.ok, data, error: null };
           if (res.ok || (res.status < 500 && res.status !== 429)) break;
         } catch (e) {
           last = { status: 0, ok: false, data: null, error: String(e) };
@@ -296,7 +296,7 @@
       }
       if (last.ok) break; // this route worked — don't try the next
     }
-    relay("pullResult", { label, target, status: last.status, ok: last.ok, data: last.data, error: last.error || undefined, body: last.body });
+    relay("pullResult", { label, target, status: last.status, ok: last.ok, data: last.data, error: last.error || undefined });
     return { ok: last.ok, data: last.data };
   }
 
@@ -527,27 +527,6 @@
       if (deepVotes) {
         await pullEpisodeCharacters(uid, jwt, watchedEpisodeIds, nameToTvdb);
       }
-
-      // DIAG (temporary): test the FIX — fetch tozelabs show per followed series
-      // and see if its uuid matches the comment's entity_uuid (i.e. the comment
-      // uses the tozelabs series uuid, which we can map to tvdb).
-      try {
-        const cs = listOf(results.commenti).find((c) => c && c.entity_type === "series" && c.entity_uuid);
-        const cuid = cs ? cs.entity_uuid : null;
-        const trim = (x) => (x ? JSON.stringify(x).slice(0, 200) : "null");
-        // Try to get the comment's SERIES NAME from the comments service — then we
-        // match name→tvdb via the follows map the converter already builds.
-        const p1 = await fetchQuiet(`https://comments.tvtime.com/v1/comments/cgw/user/${uid}/comments?sort=most_recent&only_watched=false&expand=entity`, jwt);
-        const c1 = listOf(p1)[0];
-        const p2 = cuid ? await fetchQuiet(`https://comments.tvtime.com/v1/comments/cgw/entity/${cuid}?expand=all`, jwt) : null;
-        relay("commentProbe", {
-          out: {
-            cuid,
-            expandEntity: c1 ? ("entity=" + trim(c1.entity) + " keys=" + Object.keys(c1).join(",")) : "null",
-            entityEndpoint: trim(p2),
-          },
-        });
-      } catch (e) { relay("commentProbe", { out: { err: String(e) } }); }
 
       // Foto/meme allegati ai commenti: scaricati qui (referer tvtime OK) e
       // incorporati nello ZIP come data URI.

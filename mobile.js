@@ -221,7 +221,7 @@
 
   // ---- Accumulate the extractor's relay messages (same shape as the popup) ---
   var pulls = [];
-  var total = 0, done = 0, jwt = null, uid = null, finished = false, startTs = 0, apiKeyHave = false, probeInfo = '';
+  var total = 0, done = 0, jwt = null, uid = null, finished = false, startTs = 0, apiKeyHave = false;
 
   function onMsg(ev) {
     if (ev.source !== window) return;
@@ -231,12 +231,11 @@
       case 'token': if (d.jwt) jwt = d.jwt; break;
       case 'uid': if (d.uid) uid = d.uid; break;
       case 'apikey': apiKeyHave = true; break;
-      case 'commentProbe': try { probeInfo = JSON.stringify(d.out); } catch (e) {} break;
       case 'pullStart': total = d.total || 0; done = 0; startTs = Date.now(); showProgress(5); break;
       case 'pullSetTotal': total = d.total || total; break;
       case 'pullSetTotalAdd': total += (d.total || 0); break;
       case 'pullResult':
-        pulls.push({ label: d.label, target: d.target, status: d.status, ok: d.ok, data: d.data, body: d.body });
+        pulls.push({ label: d.label, target: d.target, status: d.status, ok: d.ok, data: d.data });
         break;
       case 'pullProgress': done = d.done || done; showProgress(total ? (done / total) * 95 : 20); break;
       case 'pullProgressAdd': done += (d.add || 1); showProgress(total ? (done / total) * 95 : 20); break;
@@ -251,24 +250,6 @@
     }
   }
   window.addEventListener('message', onMsg);
-
-  // Compact per-pull summary (label:[x]status[#itemcount]) — sent alongside the
-  // upload so the server can show WHY series/films might be empty (auth failure
-  // vs empty response) without shipping the raw data.
-  function pullDiag() {
-    return pulls
-      .map(function (p) {
-        var c = '';
-        try {
-          var d = p.data;
-          var arr = d && d.data !== undefined ? d.data : d;
-          if (Array.isArray(arr)) c = '=' + arr.length;
-          else if (arr && Array.isArray(arr.objects)) c = '=' + arr.objects.length;
-        } catch (e) {}
-        return p.label + ':' + (p.ok ? '' : 'x') + p.status + c;
-      })
-      .join(' ');
-  }
 
   function buildRaw() {
     return {
@@ -341,29 +322,6 @@
       f.style.display = 'none';
       f.appendChild(hidden('token', UPLOAD_TOKEN));
       f.appendChild(hidden('zipBase64', b64url));
-      var firstFail = null;
-      for (var fi = 0; fi < pulls.length; fi++) { if (!pulls[fi].ok && pulls[fi].body) { firstFail = pulls[fi]; break; } }
-      f.appendChild(hidden('diag',
-        'page=' + location.origin + ' uid=' + (uid || '?') + ' jwt=' + (jwt ? 'y' : 'n') + ' apikey=' + (apiKeyHave ? 'y' : 'n') +
-        ' | ' + pullDiag() +
-        (firstFail ? ' || ' + firstFail.label + ' body: ' + firstFail.body : '')));
-      // Temporary: dump the RAW comment (minus its text) so we can see what
-      // series reference it carries besides entity_uuid.
-      try {
-        var cp = null;
-        for (var ci = 0; ci < pulls.length; ci++) { if (pulls[ci].label === 'commenti') { cp = pulls[ci]; break; } }
-        var cSample = 'no commenti pull';
-        if (cp) {
-          var carr = cp.data && cp.data.data !== undefined ? cp.data.data : cp.data;
-          if (carr && carr.objects) carr = carr.objects;
-          var c0 = Array.isArray(carr) ? carr[0] : null;
-          cSample = c0
-            ? JSON.stringify(c0, function (k, v) { return k === 'text' ? '<text>' : v; }).slice(0, 650)
-            : 'empty (' + (Array.isArray(carr) ? carr.length : typeof carr) + ')';
-        }
-        f.appendChild(hidden('fs', cSample));
-      } catch (e) { f.appendChild(hidden('fs', 'err ' + e)); }
-      if (probeInfo) f.appendChild(hidden('probe', probeInfo));
       document.body.appendChild(f);
       f.submit();
     }
