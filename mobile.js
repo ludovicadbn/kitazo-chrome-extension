@@ -60,6 +60,7 @@
     stop: 'Stop', stopped: 'Extraction stopped.',
     chooseHeading: 'Ready to extract your TV Time data',
     inclChars: 'Include voted characters',
+    charsWarn: '⚠️ If you’ve only voted a few characters, we recommend leaving this off — it makes the export take much longer.',
     charsNote: 'This scans every watched episode for character votes. It can take a lot longer depending on how many series you have marked in your account — turn it off for a much faster export.',
     startBtn: 'Start extraction',
   } : {
@@ -79,6 +80,7 @@
     stop: 'Interrompi', stopped: 'Estrazione interrotta.',
     chooseHeading: 'Pronto per estrarre i tuoi dati TV Time',
     inclChars: 'Includi i personaggi votati',
+    charsWarn: '⚠️ Se hai votato pochi personaggi, ti consigliamo di lasciarlo disattivato — rende l’export molto più lungo.',
     charsNote: 'Controlla i voti ai personaggi episodio per episodio. Può metterci molto di più in base a quante serie hai segnate nell’account — disattivalo per un export molto più veloce.',
     startBtn: 'Avvia estrazione',
   };
@@ -154,6 +156,8 @@
       '<div style="font-size:26px;margin-bottom:6px">📺</div>' +
       '<div style="font-size:18px;font-weight:800;margin-bottom:4px">Kitazo</div>' +
       '<div style="font-size:13px;color:rgb(185,168,214);margin-bottom:16px">' + esc(T.chooseHeading) + '</div>' +
+      '<div style="font-size:12px;color:rgb(236,231,240);background:rgb(58,47,77);border-radius:10px;' +
+        'padding:10px;margin-bottom:10px;text-align:left;line-height:1.45">' + esc(T.charsWarn) + '</div>' +
       '<label style="display:flex;align-items:flex-start;gap:10px;text-align:left;background:rgb(36,27,52);' +
         'border:1px solid rgb(58,47,77);border-radius:12px;padding:12px;cursor:pointer">' +
         '<input id="k-chars" type="checkbox" checked style="width:20px;height:20px;margin-top:1px;accent-color:rgb(139,92,246);flex:0 0 auto">' +
