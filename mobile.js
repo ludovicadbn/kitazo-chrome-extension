@@ -174,17 +174,42 @@
   // so it never hangs).
   function begin(deepVotes) {
     showProgress(3, T.starting);
-    try { window.dispatchEvent(new Event('focus')); document.dispatchEvent(new Event('visibilitychange')); } catch (e) {}
+    if (!uid || !jwt) {
+      var found0 = findIdentity();
+      if (!uid) uid = found0.uid;
+      if (!jwt) jwt = found0.jwt;
+    }
+    // The listener (inject.js) is now active but the app is idle, so it won't
+    // reveal its API key on its own. FORCE it to make a request by driving its
+    // in-page (SPA) router through a few data routes — those fetches carry the
+    // API-key header, which the hook then captures for the direct fallback.
+    forceAppRequests();
     var waited = 0;
     (function waitKey() {
-      if (!uid || !jwt) {
-        var found = findIdentity();
-        if (!uid) uid = found.uid;
-        if (!jwt) jwt = found.jwt;
+      if (!apiKeyHave && waited < 8000) {
+        if (waited === 3000 || waited === 6000) forceAppRequests(); // nudge again
+        waited += 500;
+        setTimeout(waitKey, 500);
+        return;
       }
-      if (!apiKeyHave && waited < 6000) { waited += 500; setTimeout(waitKey, 500); return; }
       window.postMessage({ __tvtimeExport: 'startPull', jwt: jwt, uid: uid, deepVotes: deepVotes }, '*');
     })();
+  }
+
+  // Nudge the TV Time SPA into fetching so its API-key header goes over the wire
+  // (the overlay hides any visual churn; we navigate away to Kitazo at the end).
+  function forceAppRequests() {
+    try { window.dispatchEvent(new Event('focus')); } catch (e) {}
+    try { window.dispatchEvent(new Event('online')); } catch (e) {}
+    var routes = ['/', '/user/' + (uid || ''), '/to-watch', '/upcoming', '/home'];
+    routes.forEach(function (r, i) {
+      setTimeout(function () {
+        try {
+          history.pushState({}, '', r);
+          window.dispatchEvent(new PopStateEvent('popstate', { state: {} }));
+        } catch (e) {}
+      }, i * 350);
+    });
   }
 
   document.documentElement.appendChild(root);
