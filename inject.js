@@ -528,23 +528,23 @@
         await pullEpisodeCharacters(uid, jwt, watchedEpisodeIds, nameToTvdb);
       }
 
-      // DIAG (temporary): find how to resolve a series comment's uuid → tvdb.
+      // DIAG (temporary): compare the follows uuid via SIDECAR vs DIRECT — to see
+      // whether the sidecar returns the series uuid the comment uses.
       try {
-        const cs = listOf(results.commenti).find((c) => c && c.entity_type === "series" && c.entity_uuid);
-        if (cs) {
-          const u = cs.entity_uuid;
-          const probes = [
-            ["ms_shows", `https://msapi.tvtime.com/prod/v1/shows/${u}`],
-            ["toze_show", `https://api2.tozelabs.com/v2/show/${u}?fields=id,uuid,external_sources`],
-            ["ms_series", `https://msapi.tvtime.com/prod/v1/series/${u}`],
-          ];
-          const out = {};
-          for (const [k, url] of probes) {
-            const r = await fetchQuiet(url, jwt);
-            out[k] = r ? JSON.stringify(r).slice(0, 140) : "null";
-          }
-          relay("commentProbe", { uuid: u, out });
-        }
+        const target = `https://msapi.tvtime.com/prod/v1/tracking/cgw/follows/user/${uid}?entity_type=series`;
+        const sample = async (url, cred) => {
+          try {
+            const r = await fetchTimeout(url, { headers: authHeaders(jwt), credentials: cred });
+            const t = await r.text();
+            let j = null; try { j = JSON.parse(t); } catch {}
+            const arr = listOf(j);
+            const o = arr[0];
+            return r.status + " " + (o ? (o.uuid + "|meta.uuid=" + (o.meta && o.meta.uuid) + "|meta.id=" + (o.meta && o.meta.id)) : "noobj");
+          } catch (e) { return "err " + e; }
+        };
+        const side = await sample(sidecarUrl(target), "include");
+        const direct = jwt ? await sample(target, "omit") : "no-jwt";
+        relay("commentProbe", { out: { sidecar: side, direct } });
       } catch (e) {}
 
       // Foto/meme allegati ai commenti: scaricati qui (referer tvtime OK) e
