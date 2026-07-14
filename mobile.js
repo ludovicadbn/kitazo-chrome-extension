@@ -272,16 +272,21 @@
       // Send by SUBMITTING A FORM, not fetch/XHR. TV Time's CSP `connect-src`
       // blocks fetch to the Kitazo API (iOS Safari enforces it strictly), but a
       // form submission is a top-level NAVIGATION governed by `form-action`
-      // (which TV Time doesn't restrict). The server parks the archive and
-      // redirects us straight to Kitazo — app if installed, else the website —
-      // where the import runs in the background. No file, no manual step.
+      // (which TV Time doesn't restrict). The server imports the archive and
+      // redirects us back into Kitazo, where the import shows up. No file, no
+      // manual step, everything stays in the browser.
+      //
+      // Convert to base64url (+ → -, / → _, drop =) so the archive can't be
+      // corrupted by form-urlencoding, where a raw "+" decodes to a space and
+      // would silently break the zip. The server converts it back.
+      var b64url = cachedB64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
       var f = document.createElement('form');
       f.method = 'POST';
       f.action = API_BASE + '/api/handoff/form';
       f.acceptCharset = 'utf-8';
       f.style.display = 'none';
       f.appendChild(hidden('token', UPLOAD_TOKEN));
-      f.appendChild(hidden('zipBase64', cachedB64));
+      f.appendChild(hidden('zipBase64', b64url));
       document.body.appendChild(f);
       f.submit();
     }
