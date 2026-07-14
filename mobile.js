@@ -167,19 +167,24 @@
     };
   }
 
-  // Kick off: give inject.js a moment (its hook may still catch ambient traffic),
-  // then resolve the identity from the page and start the pull with the user's
-  // character-vote choice.
+  // Kick off: resolve identity, then give the app a short window to reveal its
+  // API key (its hook captures it from the app's own live requests — needed for
+  // the direct fallback when the sidecar 502s). Nudge the app into making a
+  // request by re-focusing the tab, then start the pull (after ~6s at the latest
+  // so it never hangs).
   function begin(deepVotes) {
     showProgress(3, T.starting);
-    setTimeout(function () {
+    try { window.dispatchEvent(new Event('focus')); document.dispatchEvent(new Event('visibilitychange')); } catch (e) {}
+    var waited = 0;
+    (function waitKey() {
       if (!uid || !jwt) {
         var found = findIdentity();
         if (!uid) uid = found.uid;
         if (!jwt) jwt = found.jwt;
       }
+      if (!apiKeyHave && waited < 6000) { waited += 500; setTimeout(waitKey, 500); return; }
       window.postMessage({ __tvtimeExport: 'startPull', jwt: jwt, uid: uid, deepVotes: deepVotes }, '*');
-    }, 2500);
+    })();
   }
 
   document.documentElement.appendChild(root);
@@ -187,7 +192,7 @@
 
   // ---- Accumulate the extractor's relay messages (same shape as the popup) ---
   var pulls = [];
-  var total = 0, done = 0, jwt = null, uid = null, finished = false, startTs = 0;
+  var total = 0, done = 0, jwt = null, uid = null, finished = false, startTs = 0, apiKeyHave = false;
 
   function onMsg(ev) {
     if (ev.source !== window) return;
@@ -196,6 +201,7 @@
     switch (d.__tvtimeExport) {
       case 'token': if (d.jwt) jwt = d.jwt; break;
       case 'uid': if (d.uid) uid = d.uid; break;
+      case 'apikey': apiKeyHave = true; break;
       case 'pullStart': total = d.total || 0; done = 0; startTs = Date.now(); showProgress(5); break;
       case 'pullSetTotal': total = d.total || total; break;
       case 'pullSetTotalAdd': total += (d.total || 0); break;
@@ -308,7 +314,7 @@
       var firstFail = null;
       for (var fi = 0; fi < pulls.length; fi++) { if (!pulls[fi].ok && pulls[fi].body) { firstFail = pulls[fi]; break; } }
       f.appendChild(hidden('diag',
-        'page=' + location.origin + ' uid=' + (uid || '?') + ' jwt=' + (jwt ? 'y' : 'n') +
+        'page=' + location.origin + ' uid=' + (uid || '?') + ' jwt=' + (jwt ? 'y' : 'n') + ' apikey=' + (apiKeyHave ? 'y' : 'n') +
         ' | ' + pullDiag() +
         (firstFail ? ' || ' + firstFail.label + ' body: ' + firstFail.body : '')));
       document.body.appendChild(f);

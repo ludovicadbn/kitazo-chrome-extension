@@ -87,6 +87,29 @@
     }
     if (typeof value === "string" && /^Bearer\s+/i.test(value))
       relayToken(value.replace(/^Bearer\s+/i, "").trim());
+    sniffApiKey(headers);
+  }
+
+  // The TV Time API rejects direct calls with 403 "MissingAPIKey" unless they
+  // carry the app's API-key header (the /sidecar proxy injects it server-side).
+  // Capture it from the app's own live requests so our DIRECT fallback (when the
+  // sidecar 502s) can send it too.
+  let apiKey = null; // { name, value }
+  function grabApiKey(name, value) {
+    if (apiKey) return;
+    if (typeof name !== "string" || typeof value !== "string") return;
+    if (/api[-_]?key/i.test(name) && value.length >= 8) {
+      apiKey = { name, value };
+      relay("apikey", { have: true, name });
+    }
+  }
+  function sniffApiKey(headers) {
+    if (!headers || apiKey) return;
+    try {
+      if (headers instanceof Headers) headers.forEach((v, k) => grabApiKey(k, v));
+      else if (Array.isArray(headers)) headers.forEach((h) => grabApiKey(String(h[0]), h[1]));
+      else if (typeof headers === "object") for (const k of Object.keys(headers)) grabApiKey(k, headers[k]);
+    } catch {}
   }
 
   // === intercettazione =====================================================
@@ -138,6 +161,7 @@
     try {
       if (String(name).toLowerCase() === "authorization" && /^Bearer\s+/i.test(value))
         relayToken(String(value).replace(/^Bearer\s+/i, "").trim());
+      grabApiKey(String(name), String(value));
     } catch {}
     return nativeSetHeader.apply(this, arguments);
   };
@@ -212,6 +236,9 @@
   function authHeaders(jwt) {
     const h = { Accept: "application/json" };
     if (jwt) h.Authorization = `Bearer ${jwt}`;
+    // Include the app's API key (captured from live traffic) so the DIRECT
+    // fallback isn't rejected with 403 MissingAPIKey. Harmless on sidecar calls.
+    if (apiKey) h[apiKey.name] = apiKey.value;
     return h;
   }
 
