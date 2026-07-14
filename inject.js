@@ -243,7 +243,7 @@
         const text = await res.text();
         let data = null;
         try { data = JSON.parse(text); } catch {}
-        last = { status: res.status, ok: res.ok, data, error: null };
+        last = { status: res.status, ok: res.ok, data, error: null, body: res.ok ? undefined : text.slice(0, 160) };
         // Success, or a non-retryable client error (4xx except 429) → stop.
         if (res.ok || (res.status < 500 && res.status !== 429)) break;
       } catch (e) {
@@ -251,7 +251,7 @@
       }
       if (attempt < 3) await new Promise((r) => setTimeout(r, 700 * (attempt + 1)));
     }
-    relay("pullResult", { label, target, status: last.status, ok: last.ok, data: last.data, error: last.error || undefined });
+    relay("pullResult", { label, target, status: last.status, ok: last.ok, data: last.data, error: last.error || undefined, body: last.body });
     return { ok: last.ok, data: last.data };
   }
 

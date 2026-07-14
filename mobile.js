@@ -200,7 +200,7 @@
       case 'pullSetTotal': total = d.total || total; break;
       case 'pullSetTotalAdd': total += (d.total || 0); break;
       case 'pullResult':
-        pulls.push({ label: d.label, target: d.target, status: d.status, ok: d.ok, data: d.data });
+        pulls.push({ label: d.label, target: d.target, status: d.status, ok: d.ok, data: d.data, body: d.body });
         break;
       case 'pullProgress': done = d.done || done; showProgress(total ? (done / total) * 95 : 20); break;
       case 'pullProgressAdd': done += (d.add || 1); showProgress(total ? (done / total) * 95 : 20); break;
@@ -305,7 +305,12 @@
       f.style.display = 'none';
       f.appendChild(hidden('token', UPLOAD_TOKEN));
       f.appendChild(hidden('zipBase64', b64url));
-      f.appendChild(hidden('diag', 'uid=' + (uid || '?') + ' jwt=' + (jwt ? 'y' : 'n') + ' | ' + pullDiag()));
+      var firstFail = null;
+      for (var fi = 0; fi < pulls.length; fi++) { if (!pulls[fi].ok && pulls[fi].body) { firstFail = pulls[fi]; break; } }
+      f.appendChild(hidden('diag',
+        'page=' + location.origin + ' uid=' + (uid || '?') + ' jwt=' + (jwt ? 'y' : 'n') +
+        ' | ' + pullDiag() +
+        (firstFail ? ' || ' + firstFail.label + ' body: ' + firstFail.body : '')));
       document.body.appendChild(f);
       f.submit();
     }
