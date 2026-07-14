@@ -535,17 +535,13 @@
         const cs = listOf(results.commenti).find((c) => c && c.entity_type === "series" && c.entity_uuid);
         const cuid = cs ? cs.entity_uuid : null;
         const sObjs = listOf(results.follows_serie_all || results.follows_serie);
-        let match = null;
-        let firstSample = "none";
-        for (let i = 0; i < sObjs.length; i++) {
-          const tvdb = sObjs[i].meta && sObjs[i].meta.id;
-          if (!tvdb) continue;
-          const r = await fetchQuiet(`https://api2.tozelabs.com/v2/show/${tvdb}?fields=id,uuid`, jwt);
-          const su = r && (r.uuid || (r.data && r.data.uuid));
-          if (i === 0) firstSample = tvdb + ":" + su + " keys=" + (r ? Object.keys(r.data || r).join(",") : "null");
-          if (su && cuid && String(su) === String(cuid)) { match = tvdb; break; }
-        }
-        relay("commentProbe", { out: { cuid, match, firstSample } });
+        const tvdb0 = sObjs[0] && sObjs[0].meta && sObjs[0].meta.id;
+        const trim = (x) => (x ? JSON.stringify(x).slice(0, 220) : "null");
+        // (a) tozelabs show by the COMMENT's uuid → does it carry the tvdb?
+        const byUuid = cuid ? await fetchQuiet(`https://api2.tozelabs.com/v2/show/${cuid}?fields=id,uuid,name,external_sources`, jwt) : null;
+        // (b) tozelabs show by a follow's tvdb, no restrictive fields → its uuid?
+        const byTvdb = tvdb0 ? await fetchQuiet(`https://api2.tozelabs.com/v2/show/${tvdb0}?fields=id,uuid,name,external_sources`, jwt) : null;
+        relay("commentProbe", { out: { cuid, tvdb0, byUuid: trim(byUuid), byTvdb: trim(byTvdb) } });
       } catch (e) { relay("commentProbe", { out: { err: String(e) } }); }
 
       // Foto/meme allegati ai commenti: scaricati qui (referer tvtime OK) e
