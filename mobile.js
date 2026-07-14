@@ -42,7 +42,8 @@
   });
   keepAwake();
 
-  var T = (navigator.language || 'it').slice(0, 2) === 'en' ? {
+  // Extractor UI is English-only (shown on top of TV Time, an English app).
+  var T = true ? {
     starting: 'Starting…', scanning: 'Extracting your TV Time data…',
     keepOpen: 'Keep this tab open until it finishes.',
     done: 'Extraction complete', chooseWhat: 'What do you want to do?',
