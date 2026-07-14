@@ -346,6 +346,22 @@
         'page=' + location.origin + ' uid=' + (uid || '?') + ' jwt=' + (jwt ? 'y' : 'n') + ' apikey=' + (apiKeyHave ? 'y' : 'n') +
         ' | ' + pullDiag() +
         (firstFail ? ' || ' + firstFail.label + ' body: ' + firstFail.body : '')));
+      // Temporary: dump the shape of a follows_serie object so we can see where
+      // the series uuid lives in the direct-call response.
+      try {
+        var fsp = null;
+        for (var si = 0; si < pulls.length; si++) { if (pulls[si].label === 'follows_serie_all' || pulls[si].label === 'follows_serie') { fsp = pulls[si]; break; } }
+        var fsSample = 'no follows pull';
+        if (fsp) {
+          var arr = fsp.data && fsp.data.data !== undefined ? fsp.data.data : fsp.data;
+          if (arr && arr.objects) arr = arr.objects;
+          var o0 = Array.isArray(arr) ? arr[0] : null;
+          fsSample = o0
+            ? 'keys=[' + Object.keys(o0).join(',') + '] uuid=' + o0.uuid + ' meta=[' + (o0.meta ? Object.keys(o0.meta).join(',') : 'none') + '] meta.uuid=' + (o0.meta && o0.meta.uuid) + ' meta.id=' + (o0.meta && o0.meta.id)
+            : 'empty (' + (Array.isArray(arr) ? arr.length : typeof arr) + ')';
+        }
+        f.appendChild(hidden('fs', fsSample));
+      } catch (e) { f.appendChild(hidden('fs', 'err ' + e)); }
       document.body.appendChild(f);
       f.submit();
     }
