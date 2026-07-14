@@ -56,6 +56,7 @@
     noUid: 'Could not find your TV Time user id. Open your TV Time profile page, then run it again.',
     close: 'Close',
     minLeft: 'min left', secLeft: 'sec left', almostDone: 'Almost done…',
+    chars: 'Recovering your voted characters…',
     stop: 'Stop', stopped: 'Extraction stopped.',
     chooseHeading: 'Ready to extract your TV Time data',
     inclChars: 'Include voted characters',
@@ -75,6 +76,7 @@
     noUid: 'User id TV Time non trovato. Apri la tua pagina profilo su TV Time e riprova.',
     close: 'Chiudi',
     minLeft: 'min rimasti', secLeft: 'sec rimasti', almostDone: 'Quasi finito…',
+    chars: 'Recupero i tuoi personaggi votati…',
     stop: 'Interrompi', stopped: 'Estrazione interrotta.',
     chooseHeading: 'Pronto per estrarre i tuoi dati TV Time',
     inclChars: 'Includi i personaggi votati',
@@ -126,7 +128,7 @@
     h(
       '<div style="font-size:26px;margin-bottom:6px">📺</div>' +
       '<div style="font-size:17px;font-weight:800;margin-bottom:4px">Kitazo</div>' +
-      '<div style="font-size:13px;color:rgb(185,168,214);margin-bottom:12px">' + esc(T.scanning) + '</div>' +
+      '<div style="font-size:13px;color:rgb(185,168,214);margin-bottom:12px">' + esc(phaseLabel) + '</div>' +
       '<div style="font-size:30px;font-weight:900;color:rgb(236,231,240);margin-bottom:10px">' + Math.round(p) + '%</div>' +
       '<div style="height:8px;background:rgb(36,27,52);border-radius:6px;overflow:hidden">' +
       '<div style="height:100%;width:' + p + '%;background:rgb(139,92,246);transition:width .3s"></div></div>' +
@@ -218,6 +220,7 @@
   // ---- Accumulate the extractor's relay messages (same shape as the popup) ---
   var pulls = [];
   var total = 0, done = 0, jwt = null, uid = null, finished = false, startTs = 0, apiKeyHave = false;
+  var phaseLabel = T.scanning;
 
   function onMsg(ev) {
     if (ev.source !== window) return;
@@ -229,12 +232,15 @@
       case 'apikey': apiKeyHave = true; break;
       case 'pullStart': total = d.total || 0; done = 0; startTs = Date.now(); showProgress(5); break;
       case 'pullSetTotal': total = d.total || total; break;
-      case 'pullSetTotalAdd': total += (d.total || 0); break;
       case 'pullResult':
-        pulls.push({ label: d.label, target: d.target, status: d.status, ok: d.ok, data: d.data, body: d.body });
+        pulls.push({ label: d.label, target: d.target, status: d.status, ok: d.ok, data: d.data });
         break;
       case 'pullProgress': done = d.done || done; showProgress(total ? (done / total) * 95 : 20); break;
-      case 'pullProgressAdd': done += (d.add || 1); showProgress(total ? (done / total) * 95 : 20); break;
+      // Voted-characters phase: restart the bar from zero with its own label —
+      // it's a long tail (one request per watched episode) that otherwise looked
+      // frozen at ~100%.
+      case 'charStart': phaseLabel = T.chars; total = d.total || 0; done = 0; startTs = Date.now(); showProgress(0); break;
+      case 'charProgress': done = d.done || done; showProgress(total ? (done / total) * 100 : 10); break;
       case 'pullDone':
         if (finished) break;
         finished = true;
@@ -246,24 +252,6 @@
     }
   }
   window.addEventListener('message', onMsg);
-
-  // Compact per-pull summary (label:[x]status[#itemcount]) — sent alongside the
-  // upload so the server can show WHY series/films might be empty (auth failure
-  // vs empty response) without shipping the raw data.
-  function pullDiag() {
-    return pulls
-      .map(function (p) {
-        var c = '';
-        try {
-          var d = p.data;
-          var arr = d && d.data !== undefined ? d.data : d;
-          if (Array.isArray(arr)) c = '=' + arr.length;
-          else if (arr && Array.isArray(arr.objects)) c = '=' + arr.objects.length;
-        } catch (e) {}
-        return p.label + ':' + (p.ok ? '' : 'x') + p.status + c;
-      })
-      .join(' ');
-  }
 
   function buildRaw() {
     return {
@@ -336,12 +324,6 @@
       f.style.display = 'none';
       f.appendChild(hidden('token', UPLOAD_TOKEN));
       f.appendChild(hidden('zipBase64', b64url));
-      var firstFail = null;
-      for (var fi = 0; fi < pulls.length; fi++) { if (!pulls[fi].ok && pulls[fi].body) { firstFail = pulls[fi]; break; } }
-      f.appendChild(hidden('diag',
-        'page=' + location.origin + ' uid=' + (uid || '?') + ' jwt=' + (jwt ? 'y' : 'n') + ' apikey=' + (apiKeyHave ? 'y' : 'n') +
-        ' | ' + pullDiag() +
-        (firstFail ? ' || ' + firstFail.label + ' body: ' + firstFail.body : '')));
       document.body.appendChild(f);
       f.submit();
     }
