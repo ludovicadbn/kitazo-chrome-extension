@@ -592,9 +592,12 @@
     relay("pullSetTotalAdd", { add: targets.length });
 
     // Emissione a blocchi (ogni 50) per non accumulare tutto in memoria.
+    // Conteggio esplicito invece di `done % 50` così il bundle minificato non
+    // contiene "%50" (che iOS potrebbe interpretare come percent-encoding).
     let charBuf = [];
     let blockN = 0;
     let done = 0;
+    let sinceFlush = 0;
     const flush = () => {
       if (charBuf.length) {
         relay("pullResult", { label: `voti_personaggio_episodi_${blockN}`, status: 200, ok: true, data: { votes: charBuf } });
@@ -624,8 +627,9 @@
           }
         }
         done++;
+        sinceFlush++;
         relay("pullProgressAdd", { add: 1 });
-        if (done % 50 === 0) flush();
+        if (sinceFlush >= 50) { flush(); sinceFlush = 0; }
         await new Promise((r) => setTimeout(r, 50));  // throttle leggero per worker
       }
     }

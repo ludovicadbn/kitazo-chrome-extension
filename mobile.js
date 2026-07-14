@@ -49,7 +49,9 @@
     send: 'Send to Kitazo', download: 'Download archive',
     sending: 'Sending to Kitazo…', opening: 'Opening Kitazo…',
     building: 'Preparing the archive…', downloaded: 'Archive downloaded.',
-    sendErr: 'Send failed. Get a fresh link from Kitazo and try again.',
+    sendErr: 'Link expired. Copy a fresh bookmarklet from Kitazo (Import → Mobile) and run it again.',
+    tooLarge: 'Your library is too large to send this way. Use the desktop extension for this account.',
+    netErr: 'Network error — check your connection and tap Send again.',
     noToken: 'Missing upload token — copy the bookmarklet again from Kitazo (Settings → Import → Mobile).',
     noUid: 'Could not find your TV Time user id. Open your TV Time profile page, then run it again.',
     close: 'Close',
@@ -66,7 +68,9 @@
     send: 'Invia a Kitazo', download: 'Scarica archivio',
     sending: 'Invio a Kitazo…', opening: 'Apro Kitazo…',
     building: 'Preparo l’archivio…', downloaded: 'Archivio scaricato.',
-    sendErr: 'Invio fallito. Prendi un nuovo link da Kitazo e riprova.',
+    sendErr: 'Link scaduto. Copia un nuovo bookmarklet da Kitazo (Importa → Mobile) e riavvialo.',
+    tooLarge: 'La tua libreria è troppo grande per questo metodo. Per questo account usa l’estensione desktop.',
+    netErr: 'Errore di rete — controlla la connessione e ripremi Invia.',
     noToken: 'Token mancante — ricopia il bookmarklet da Kitazo (Impostazioni → Importa → Mobile).',
     noUid: 'User id TV Time non trovato. Apri la tua pagina profilo su TV Time e riprova.',
     close: 'Chiudi',
@@ -248,25 +252,42 @@
     card.querySelector('#k-send button').onclick = doSend;
     function setMsg(s) { msg.textContent = s; }
 
+    // Build the archive once and keep it, so a retry (e.g. after a flaky network)
+    // doesn't re-zip the whole library.
+    var cachedB64 = null;
+
     async function doSend() {
       if (!UPLOAD_TOKEN) { setMsg(T.noToken); return; }
-      setMsg(T.building);
       try {
-        var blob = await window.TVTimeConverter.buildZipBlob(buildRaw());
-        var b64 = await blobToBase64(blob);
+        if (!cachedB64) {
+          setMsg(T.building);
+          var blob = await window.TVTimeConverter.buildZipBlob(buildRaw());
+          cachedB64 = await blobToBase64(blob);
+        }
         setMsg(T.sending);
         var res = await fetch(API_BASE + '/api/handoff', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ token: UPLOAD_TOKEN, zipBase64: b64 }),
+          body: JSON.stringify({ token: UPLOAD_TOKEN, zipBase64: cachedB64 }),
         });
-        if (!res.ok) throw new Error('HTTP ' + res.status);
+        if (!res.ok) {
+          // Map the server's status to an actionable message instead of one
+          // generic "send failed". 401 = token gone (needs a fresh bookmarklet),
+          // 413 = archive over the cap, anything else = surface the status.
+          if (res.status === 401) { setMsg(T.sendErr); return; }
+          if (res.status === 413) { setMsg(T.tooLarge); return; }
+          var body = '';
+          try { body = (await res.json()).error || ''; } catch (e) {}
+          setMsg('HTTP ' + res.status + (body ? ' — ' + body : ''));
+          return;
+        }
         setMsg(T.opening);
         // Straight to Kitazo (app if installed, else the site). The import page
         // sees the parked archive on the account and runs it in the background.
         window.location.href = API_BASE + '/import?imported=1';
       } catch (e) {
-        setMsg(T.sendErr);
+        // fetch() itself threw → connectivity/preflight problem, not the server.
+        setMsg(T.netErr);
       }
     }
   }
