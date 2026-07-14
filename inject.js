@@ -9,6 +9,10 @@
 
   const MAX_BODY_CHARS = 12_000_000;
   let lastJwt = null;
+  // Cooperative stop: the mobile overlay (or popup) can post {__tvtimeExport:
+  // "abortPull"} to halt an in-flight extraction. The long loops below check
+  // this flag and bail out early instead of hammering the API to the end.
+  let aborted = false;
 
   function isTvTimeBackend(rawUrl) {
     try {
@@ -328,7 +332,9 @@
   window.addEventListener("message", async (event) => {
     if (event.source !== window) return;
     const d = event.data;
+    if (d && d.__tvtimeExport === "abortPull") { aborted = true; return; }
     if (!d || d.__tvtimeExport !== "startPull") return;
+    aborted = false;   // fresh run
 
     const jwt = d.jwt || lastJwt;   // opzionale: se manca si usano i cookie
     // User id: dal messaggio, o dal token, o dall'URL della pagina.
@@ -349,12 +355,14 @@
     const results = {};
     let done = 0;
     for (const [label, target] of targets) {
+      if (aborted) { relay("pullDone", { aborted: true }); return; }
       const r = await pullOne(label, target, jwt);
       results[label] = r.data;
       done++;
       relay("pullProgress", { done });
       await new Promise((r) => setTimeout(r, 350));
     }
+    if (aborted) { relay("pullDone", { aborted: true }); return; }
 
     // === PASS 2: voti dettagliati ===
     try {
@@ -465,6 +473,7 @@
   async function pullSeriesStructure(jwt, serieIds, done) {
     const ms = "https://msapi.tvtime.com/v1/series";
     for (const sid of serieIds) {
+      if (aborted) break;
       // Retry a failed/empty episode-structure fetch: a single transient timeout
       // or rate-limit here used to drop the ENTIRE series' watched episodes (the
       // watch log can only be placed via this structure), quietly shrinking the
@@ -600,6 +609,7 @@
     let failed = 0;   // episodi non recuperati dopo i retry (per diagnostica)
     async function worker() {
       while (idx < targets.length) {
+        if (aborted) return;
         const t = targets[idx++];
         const chars = await fetchChars(t.ep_id);
         if (chars === null) {
@@ -648,6 +658,7 @@
     let i = 0;
     async function worker() {
       while (i < uniq.length) {
+        if (aborted) return;
         const url = uniq[i++];
         try {
           const res = await fetchTimeout(url, { credentials: "omit" }, 20000);

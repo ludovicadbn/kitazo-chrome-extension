@@ -54,6 +54,7 @@
     noUid: 'Could not find your TV Time user id. Open your TV Time profile page, then run it again.',
     close: 'Close',
     minLeft: 'min left', secLeft: 'sec left', almostDone: 'Almost done…',
+    stop: 'Stop', stopped: 'Extraction stopped.',
     chooseHeading: 'Ready to extract your TV Time data',
     inclChars: 'Include voted characters',
     charsNote: 'This scans every watched episode for character votes. It can take a lot longer depending on how many series you have marked in your account — turn it off for a much faster export.',
@@ -70,6 +71,7 @@
     noUid: 'User id TV Time non trovato. Apri la tua pagina profilo su TV Time e riprova.',
     close: 'Chiudi',
     minLeft: 'min rimasti', secLeft: 'sec rimasti', almostDone: 'Quasi finito…',
+    stop: 'Interrompi', stopped: 'Estrazione interrotta.',
     chooseHeading: 'Pronto per estrarre i tuoi dati TV Time',
     inclChars: 'Includi i personaggi votati',
     charsNote: 'Controlla i voti ai personaggi episodio per episodio. Può metterci molto di più in base a quante serie hai segnate nell’account — disattivalo per un export molto più veloce.',
@@ -124,8 +126,19 @@
       '<div style="font-size:30px;font-weight:900;color:#ECE7F0;margin-bottom:10px">' + Math.round(p) + '%</div>' +
       '<div style="height:8px;background:#241b34;border-radius:6px;overflow:hidden">' +
       '<div style="height:100%;width:' + p + '%;background:#8B5CF6;transition:width .3s"></div></div>' +
-      '<div style="font-size:12px;color:#6f6483;margin-top:10px">' + esc(note || etaText()) + '</div>'
+      '<div style="font-size:12px;color:#6f6483;margin-top:10px">' + esc(note || etaText()) + '</div>' +
+      '<div id="k-stop">' + btn(T.stop) + '</div>'
     );
+    var s = card.querySelector('#k-stop button');
+    if (s) s.onclick = doAbort;
+  }
+
+  // Stop an in-flight extraction: tell inject.js to bail out of its loops, mark
+  // ourselves finished so a late pullDone can't trigger the upload, then close.
+  function doAbort() {
+    finished = true;
+    try { window.postMessage({ __tvtimeExport: 'abortPull' }, '*'); } catch (e) {}
+    cleanup();
   }
 
   // First screen: let the user opt in/out of the slow per-episode character-vote
@@ -190,6 +203,7 @@
       case 'pullDone':
         if (finished) break;
         finished = true;
+        if (d.aborted) { cleanup(); break; }
         if (d.error) { showError(d.error); break; }
         finalize();
         break;
