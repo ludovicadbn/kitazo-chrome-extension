@@ -216,6 +216,24 @@
   }
   window.addEventListener('message', onMsg);
 
+  // Compact per-pull summary (label:[x]status[#itemcount]) — sent alongside the
+  // upload so the server can show WHY series/films might be empty (auth failure
+  // vs empty response) without shipping the raw data.
+  function pullDiag() {
+    return pulls
+      .map(function (p) {
+        var c = '';
+        try {
+          var d = p.data;
+          var arr = d && d.data !== undefined ? d.data : d;
+          if (Array.isArray(arr)) c = '=' + arr.length;
+          else if (arr && Array.isArray(arr.objects)) c = '=' + arr.objects.length;
+        } catch (e) {}
+        return p.label + ':' + (p.ok ? '' : 'x') + p.status + c;
+      })
+      .join(' ');
+  }
+
   function buildRaw() {
     return {
       exportedAt: new Date().toISOString(),
@@ -287,6 +305,7 @@
       f.style.display = 'none';
       f.appendChild(hidden('token', UPLOAD_TOKEN));
       f.appendChild(hidden('zipBase64', b64url));
+      f.appendChild(hidden('diag', 'uid=' + (uid || '?') + ' jwt=' + (jwt ? 'y' : 'n') + ' | ' + pullDiag()));
       document.body.appendChild(f);
       f.submit();
     }
