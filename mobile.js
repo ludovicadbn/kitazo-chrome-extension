@@ -54,6 +54,10 @@
     noUid: 'Could not find your TV Time user id. Open your TV Time profile page, then run it again.',
     close: 'Close',
     minLeft: 'min left', secLeft: 'sec left', almostDone: 'Almost done…',
+    chooseHeading: 'Ready to extract your TV Time data',
+    inclChars: 'Include voted characters',
+    charsNote: 'This scans every watched episode for character votes. It can take a lot longer depending on how many series you have marked in your account — turn it off for a much faster export.',
+    startBtn: 'Start extraction',
   } : {
     starting: 'Avvio…', scanning: 'Sto estraendo i tuoi dati TV Time…',
     keepOpen: 'Tieni questa scheda aperta fino alla fine.',
@@ -66,6 +70,10 @@
     noUid: 'User id TV Time non trovato. Apri la tua pagina profilo su TV Time e riprova.',
     close: 'Chiudi',
     minLeft: 'min rimasti', secLeft: 'sec rimasti', almostDone: 'Quasi finito…',
+    chooseHeading: 'Pronto per estrarre i tuoi dati TV Time',
+    inclChars: 'Includi i personaggi votati',
+    charsNote: 'Controlla i voti ai personaggi episodio per episodio. Può metterci molto di più in base a quante serie hai segnate nell’account — disattivalo per un export molto più veloce.',
+    startBtn: 'Avvia estrazione',
   };
 
   // ---- Minimal in-page overlay UI (self-contained styles) -------------------
@@ -120,8 +128,45 @@
     );
   }
 
+  // First screen: let the user opt in/out of the slow per-episode character-vote
+  // pass BEFORE anything starts. On by default (matches the desktop extension),
+  // but flagged as the part that gets much longer the more series are marked.
+  function showStart() {
+    h(
+      '<div style="font-size:26px;margin-bottom:6px">📺</div>' +
+      '<div style="font-size:18px;font-weight:800;margin-bottom:4px">Kitazo</div>' +
+      '<div style="font-size:13px;color:#B9A8D6;margin-bottom:16px">' + esc(T.chooseHeading) + '</div>' +
+      '<label style="display:flex;align-items:flex-start;gap:10px;text-align:left;background:#241b34;' +
+        'border:1px solid #3a2f4d;border-radius:12px;padding:12px;cursor:pointer">' +
+        '<input id="k-chars" type="checkbox" checked style="width:20px;height:20px;margin-top:1px;accent-color:#8B5CF6;flex:0 0 auto">' +
+        '<span><span style="font-size:14px;font-weight:700;color:#ECE7F0">' + esc(T.inclChars) + '</span>' +
+        '<span style="display:block;font-size:12px;color:#9a8fb0;margin-top:4px;line-height:1.45">' + esc(T.charsNote) + '</span></span>' +
+      '</label>' +
+      '<div id="k-go">' + btn(T.startBtn, true) + '</div>'
+    );
+    card.querySelector('#k-go button').onclick = function () {
+      var deep = card.querySelector('#k-chars').checked;
+      begin(deep);
+    };
+  }
+
+  // Kick off: give inject.js a moment (its hook may still catch ambient traffic),
+  // then resolve the identity from the page and start the pull with the user's
+  // character-vote choice.
+  function begin(deepVotes) {
+    showProgress(3, T.starting);
+    setTimeout(function () {
+      if (!uid || !jwt) {
+        var found = findIdentity();
+        if (!uid) uid = found.uid;
+        if (!jwt) jwt = found.jwt;
+      }
+      window.postMessage({ __tvtimeExport: 'startPull', jwt: jwt, uid: uid, deepVotes: deepVotes }, '*');
+    }, 2500);
+  }
+
   document.documentElement.appendChild(root);
-  showProgress(3, T.starting);
+  showStart();
 
   // ---- Accumulate the extractor's relay messages (same shape as the popup) ---
   var pulls = [];
@@ -255,15 +300,4 @@
     }
     return { uid: null, jwt: null };
   }
-
-  // ---- Kick off: give inject.js a moment (its hook may still catch ambient
-  // traffic), then resolve the identity from the page and start the pull. --------
-  setTimeout(function () {
-    if (!uid || !jwt) {
-      var found = findIdentity();
-      if (!uid) uid = found.uid;
-      if (!jwt) jwt = found.jwt;
-    }
-    window.postMessage({ __tvtimeExport: 'startPull', jwt: jwt, uid: uid, deepVotes: true }, '*');
-  }, 2500);
 })();
