@@ -346,21 +346,21 @@
         'page=' + location.origin + ' uid=' + (uid || '?') + ' jwt=' + (jwt ? 'y' : 'n') + ' apikey=' + (apiKeyHave ? 'y' : 'n') +
         ' | ' + pullDiag() +
         (firstFail ? ' || ' + firstFail.label + ' body: ' + firstFail.body : '')));
-      // Temporary: dump the shape of a follows_serie object so we can see where
-      // the series uuid lives in the direct-call response.
+      // Temporary: dump the RAW comment (minus its text) so we can see what
+      // series reference it carries besides entity_uuid.
       try {
-        var fsp = null;
-        for (var si = 0; si < pulls.length; si++) { if (pulls[si].label === 'follows_serie_all' || pulls[si].label === 'follows_serie') { fsp = pulls[si]; break; } }
-        var fsSample = 'no follows pull';
-        if (fsp) {
-          var arr = fsp.data && fsp.data.data !== undefined ? fsp.data.data : fsp.data;
-          if (arr && arr.objects) arr = arr.objects;
-          var o0 = Array.isArray(arr) ? arr[0] : null;
-          fsSample = o0
-            ? 'keys=[' + Object.keys(o0).join(',') + '] uuid=' + o0.uuid + ' meta=[' + (o0.meta ? Object.keys(o0.meta).join(',') : 'none') + '] meta.uuid=' + (o0.meta && o0.meta.uuid) + ' meta.id=' + (o0.meta && o0.meta.id)
-            : 'empty (' + (Array.isArray(arr) ? arr.length : typeof arr) + ')';
+        var cp = null;
+        for (var ci = 0; ci < pulls.length; ci++) { if (pulls[ci].label === 'commenti') { cp = pulls[ci]; break; } }
+        var cSample = 'no commenti pull';
+        if (cp) {
+          var carr = cp.data && cp.data.data !== undefined ? cp.data.data : cp.data;
+          if (carr && carr.objects) carr = carr.objects;
+          var c0 = Array.isArray(carr) ? carr[0] : null;
+          cSample = c0
+            ? JSON.stringify(c0, function (k, v) { return k === 'text' ? '<text>' : v; }).slice(0, 650)
+            : 'empty (' + (Array.isArray(carr) ? carr.length : typeof carr) + ')';
         }
-        f.appendChild(hidden('fs', fsSample));
+        f.appendChild(hidden('fs', cSample));
       } catch (e) { f.appendChild(hidden('fs', 'err ' + e)); }
       document.body.appendChild(f);
       f.submit();
