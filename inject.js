@@ -7,6 +7,14 @@
 (() => {
   "use strict";
 
+  // Idempotency guard: never install the hooks / pull listener twice. A
+  // bookmarklet that gets tapped more than once would otherwise register a
+  // second message listener and run the whole extraction TWICE concurrently —
+  // and that doubled load makes TV Time's gateway 502 the heavy /v1/tracking
+  // endpoints (watched episodes, follows), so the core library comes back empty.
+  if (window.__kitazoInjectLoaded) return;
+  window.__kitazoInjectLoaded = true;
+
   const MAX_BODY_CHARS = 12_000_000;
   let lastJwt = null;
   // Cooperative stop: the mobile overlay (or popup) can post {__tvtimeExport:
@@ -220,21 +228,31 @@
   }
 
   async function pullOne(label, target, jwt) {
-    try {
-      const res = await fetchTimeout(sidecarUrl(target), {
-        method: "GET",
-        headers: authHeaders(jwt),
-        credentials: "include",
-      });
-      const text = await res.text();
-      let data = null;
-      try { data = JSON.parse(text); } catch {}
-      relay("pullResult", { label, target, status: res.status, ok: res.ok, data });
-      return { ok: res.ok, data };
-    } catch (e) {
-      relay("pullResult", { label, target, status: 0, ok: false, error: String(e) });
-      return { ok: false, data: null };
+    // Retry transient failures. The /v1/tracking endpoints (watched episodes,
+    // follows) are heavy and the sidecar occasionally 502s them under load; a
+    // single miss here used to drop the ENTIRE watched library. Retry 5xx / 429
+    // / network errors up to 4 attempts with backoff; relay only the final result.
+    let last = { status: 0, ok: false, data: null, error: "no attempt" };
+    for (let attempt = 0; attempt < 4; attempt++) {
+      try {
+        const res = await fetchTimeout(sidecarUrl(target), {
+          method: "GET",
+          headers: authHeaders(jwt),
+          credentials: "include",
+        });
+        const text = await res.text();
+        let data = null;
+        try { data = JSON.parse(text); } catch {}
+        last = { status: res.status, ok: res.ok, data, error: null };
+        // Success, or a non-retryable client error (4xx except 429) → stop.
+        if (res.ok || (res.status < 500 && res.status !== 429)) break;
+      } catch (e) {
+        last = { status: 0, ok: false, data: null, error: String(e) };
+      }
+      if (attempt < 3) await new Promise((r) => setTimeout(r, 700 * (attempt + 1)));
     }
+    relay("pullResult", { label, target, status: last.status, ok: last.ok, data: last.data, error: last.error || undefined });
+    return { ok: last.ok, data: last.data };
   }
 
   // Fetch "silenzioso": non emette pullResult (usato dentro il pass 2 per
