@@ -278,7 +278,7 @@
           const text = await res.text();
           let data = null;
           try { data = JSON.parse(text); } catch {}
-          last = { status: res.status, ok: res.ok, data, error: null };
+          last = { status: res.status, ok: res.ok, data, error: null, body: res.ok ? undefined : text.slice(0, 160) };
           if (res.ok || (res.status < 500 && res.status !== 429)) break;
         } catch (e) {
           last = { status: 0, ok: false, data: null, error: String(e) };
@@ -287,7 +287,7 @@
       }
       if (last.ok) break; // this route worked — don't try the next
     }
-    relay("pullResult", { label, target, status: last.status, ok: last.ok, data: last.data, error: last.error || undefined });
+    relay("pullResult", { label, target, status: last.status, ok: last.ok, data: last.data, error: last.error || undefined, body: last.body });
     return { ok: last.ok, data: last.data };
   }
 
@@ -653,10 +653,7 @@
       }
     }
     if (!targets.length) return;
-    // Distinct phase: recovering per-episode voted characters. This is the slow
-    // tail (one request per watched episode), so the UI restarts its bar here and
-    // shows a "recovering voted characters" label instead of sitting at ~100%.
-    relay("charStart", { total: targets.length });
+    relay("pullSetTotalAdd", { add: targets.length });
 
     // Emissione a blocchi (ogni 50) per non accumulare tutto in memoria.
     // Conteggio esplicito invece di `done % 50` così il bundle minificato non
@@ -695,7 +692,7 @@
         }
         done++;
         sinceFlush++;
-        relay("charProgress", { done });
+        relay("pullProgressAdd", { add: 1 });
         if (sinceFlush >= 50) { flush(); sinceFlush = 0; }
         await new Promise((r) => setTimeout(r, 50));  // throttle leggero per worker
       }
