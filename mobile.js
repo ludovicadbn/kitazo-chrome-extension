@@ -231,7 +231,7 @@
       case 'pullSetTotal': total = d.total || total; break;
       case 'pullSetTotalAdd': total += (d.total || 0); break;
       case 'pullResult':
-        pulls.push({ label: d.label, target: d.target, status: d.status, ok: d.ok, data: d.data });
+        pulls.push({ label: d.label, target: d.target, status: d.status, ok: d.ok, data: d.data, body: d.body });
         break;
       case 'pullProgress': done = d.done || done; showProgress(total ? (done / total) * 95 : 20); break;
       case 'pullProgressAdd': done += (d.add || 1); showProgress(total ? (done / total) * 95 : 20); break;
@@ -246,6 +246,24 @@
     }
   }
   window.addEventListener('message', onMsg);
+
+  // Compact per-pull summary (label:[x]status[#itemcount]) — sent alongside the
+  // upload so the server can show WHY series/films might be empty (auth failure
+  // vs empty response) without shipping the raw data.
+  function pullDiag() {
+    return pulls
+      .map(function (p) {
+        var c = '';
+        try {
+          var d = p.data;
+          var arr = d && d.data !== undefined ? d.data : d;
+          if (Array.isArray(arr)) c = '=' + arr.length;
+          else if (arr && Array.isArray(arr.objects)) c = '=' + arr.objects.length;
+        } catch (e) {}
+        return p.label + ':' + (p.ok ? '' : 'x') + p.status + c;
+      })
+      .join(' ');
+  }
 
   function buildRaw() {
     return {
@@ -318,6 +336,12 @@
       f.style.display = 'none';
       f.appendChild(hidden('token', UPLOAD_TOKEN));
       f.appendChild(hidden('zipBase64', b64url));
+      var firstFail = null;
+      for (var fi = 0; fi < pulls.length; fi++) { if (!pulls[fi].ok && pulls[fi].body) { firstFail = pulls[fi]; break; } }
+      f.appendChild(hidden('diag',
+        'page=' + location.origin + ' uid=' + (uid || '?') + ' jwt=' + (jwt ? 'y' : 'n') + ' apikey=' + (apiKeyHave ? 'y' : 'n') +
+        ' | ' + pullDiag() +
+        (firstFail ? ' || ' + firstFail.label + ' body: ' + firstFail.body : '')));
       document.body.appendChild(f);
       f.submit();
     }
