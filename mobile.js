@@ -53,6 +53,7 @@
     noToken: 'Missing upload token — copy the bookmarklet again from Kitazo (Settings → Import → Mobile).',
     noUid: 'Could not find your TV Time user id. Open your TV Time profile page, then run it again.',
     close: 'Close',
+    minLeft: 'min left', secLeft: 'sec left', almostDone: 'Almost done…',
   } : {
     starting: 'Avvio…', scanning: 'Sto estraendo i tuoi dati TV Time…',
     keepOpen: 'Tieni questa scheda aperta fino alla fine.',
@@ -64,6 +65,7 @@
     noToken: 'Token mancante — ricopia il bookmarklet da Kitazo (Impostazioni → Importa → Mobile).',
     noUid: 'User id TV Time non trovato. Apri la tua pagina profilo su TV Time e riprova.',
     close: 'Chiudi',
+    minLeft: 'min rimasti', secLeft: 'sec rimasti', almostDone: 'Quasi finito…',
   };
 
   // ---- Minimal in-page overlay UI (self-contained styles) -------------------
@@ -92,14 +94,29 @@
   }
   function cleanup() { try { root.remove(); } catch (e) {} window.__kitazoMobileRunning = false; }
 
+  // Rough time-remaining estimate from how fast pulls are completing.
+  function etaText() {
+    if (!startTs || !total || done <= 0) return T.keepOpen;
+    var elapsed = (Date.now() - startTs) / 1000;
+    if (elapsed < 2) return T.keepOpen;
+    var rate = done / elapsed;
+    if (rate <= 0) return T.keepOpen;
+    var remain = (total - done) / rate;
+    if (remain <= 3) return T.almostDone;
+    if (remain < 60) return '~' + Math.ceil(remain) + ' ' + T.secLeft;
+    return '~' + Math.ceil(remain / 60) + ' ' + T.minLeft;
+  }
+
   function showProgress(pct, note) {
+    var p = Math.max(3, Math.min(100, pct || 0));
     h(
       '<div style="font-size:26px;margin-bottom:6px">📺</div>' +
       '<div style="font-size:17px;font-weight:800;margin-bottom:4px">Kitazo</div>' +
-      '<div style="font-size:13px;color:#B9A8D6;margin-bottom:14px">' + esc(T.scanning) + '</div>' +
+      '<div style="font-size:13px;color:#B9A8D6;margin-bottom:12px">' + esc(T.scanning) + '</div>' +
+      '<div style="font-size:30px;font-weight:900;color:#ECE7F0;margin-bottom:10px">' + Math.round(p) + '%</div>' +
       '<div style="height:8px;background:#241b34;border-radius:6px;overflow:hidden">' +
-      '<div style="height:100%;width:' + Math.max(3, Math.min(100, pct || 0)) + '%;background:#8B5CF6;transition:width .3s"></div></div>' +
-      '<div style="font-size:12px;color:#6f6483;margin-top:10px">' + esc(note || T.keepOpen) + '</div>'
+      '<div style="height:100%;width:' + p + '%;background:#8B5CF6;transition:width .3s"></div></div>' +
+      '<div style="font-size:12px;color:#6f6483;margin-top:10px">' + esc(note || etaText()) + '</div>'
     );
   }
 
@@ -108,7 +125,7 @@
 
   // ---- Accumulate the extractor's relay messages (same shape as the popup) ---
   var pulls = [];
-  var total = 0, done = 0, jwt = null, uid = null, finished = false;
+  var total = 0, done = 0, jwt = null, uid = null, finished = false, startTs = 0;
 
   function onMsg(ev) {
     if (ev.source !== window) return;
@@ -117,7 +134,7 @@
     switch (d.__tvtimeExport) {
       case 'token': if (d.jwt) jwt = d.jwt; break;
       case 'uid': if (d.uid) uid = d.uid; break;
-      case 'pullStart': total = d.total || 0; done = 0; showProgress(5); break;
+      case 'pullStart': total = d.total || 0; done = 0; startTs = Date.now(); showProgress(5); break;
       case 'pullSetTotal': total = d.total || total; break;
       case 'pullSetTotalAdd': total += (d.total || 0); break;
       case 'pullResult':
